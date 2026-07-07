@@ -55,8 +55,8 @@
 
       formatter = forAllSystems (pkgs: pkgs.nixpkgs-fmt);
 
-      # nix-holm core: hand-built holms, no home-manager involved.
-      # nix-holm core: packages on PATH + a dotfiles derivation
+      # nix-holm core: hand-built holms — packages on PATH + a holmFiles
+      # derivation, no home-manager involved.
       lib.mkHolm = import ./nix/mk-holm.nix;
       # nix-holm-manager: holms furnished by a home-manager configuration.
       lib.mkHolmManager = import ./nix/mk-holm-manager.nix;

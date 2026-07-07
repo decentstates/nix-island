@@ -89,7 +89,11 @@ pkgs.writeShellApplication {
       done
     fi
 
-    cp "$manifest" "$state/manifest"
+    # `install`, not `cp`: the source lives in the store with mode 0444,
+    # and cp would copy those bits — making the NEXT generation change
+    # fail with EACCES. install unlinks and recreates, which also heals
+    # states written before this fix.
+    install -m 644 "$manifest" "$state/manifest"
     ln -sfT "$files" "$marker"
   '';
 }
