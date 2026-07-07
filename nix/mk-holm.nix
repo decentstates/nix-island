@@ -1,45 +1,30 @@
-# nix-holm core: build a named executable (e.g. `work-shell`) that drops
-# you into an isolated home — a "holm" — sandboxed by Island/Landlock.
-#
-# The core knows nothing about home-manager. A holm's contents are:
-#   * `packages`  — merged (with the shell + coreutils baseline) into one
-#                   profile; its bin/ is the ONLY PATH inside, and every
-#                   etc/profile.d/*.sh in it is sourced on entry;
-#   * `holmFiles` — any derivation whose tree is linked, leaf by leaf and
-#                   generation-aware, into the holm's $HOME.
-# nix-holm-manager (mk-holm-manager.nix) plugs home-manager into exactly
-# these two inputs.
-#
-# On launch the wrapper: (1) symlinks the Nix-rendered Island profile into
-# ~/.config/island/profiles/<name>/ (Island reads only from there); (2)
-# links the dotfiles via mk-home-linker.nix; (3) execs `island run` with a
-# launcher that resets to a fresh environment (explicit allowlist only),
-# points HOME at the holm, and runs $SHELL or your arguments.
+# nix-holm core: a named executable dropping into an Island/Landlock-
+# sandboxed home. Contents = `packages` (PATH) + `holmFiles` (dotfile
+# tree); mk-holm-manager.nix plugs home-manager into these two inputs.
 { pkgs
 , lib ? pkgs.lib
 , island ? pkgs.callPackage ./island-package.nix { }
 }:
 
-{ name # executable and Island profile name, e.g. "work-shell"
-, directory # the holm's $HOME; absolute; created on launch
-, packages ? [ ] # on PATH inside, next to the shell + coreutils baseline
+{ name # executable and Island profile name
+, directory # the holm's $HOME; absolute
+, packages ? [ ] # on PATH inside (plus shell + coreutils); their etc/profile.d/*.sh are sourced
 , holmFiles ? null # derivation linked into the holm's $HOME
-, environment ? { } # extra env vars exported inside the fresh environment
-, shell ? pkgs.bashInteractive # becomes $SHELL; runs (login) when invoked with no args; args run arbitrary commands instead
-, passEnv ? [ "TERM" "COLORTERM" "LANG" "LC_ALL" "TZ" "USER" "LOGNAME" ]
-  # ^ the only variables that cross from your session into the holm
-, readOnlyPaths ? [ ] # extra hierarchies readable inside
-, readWritePaths ? [ ] # extra hierarchies read/writable inside
-, tcpPorts ? [ ] # TCP ports usable inside (connect + bind); empty = no TCP
+, environment ? { }
+, shell ? pkgs.bashInteractive # $SHELL inside; runs with no args; CLI args run instead
+, passEnv ? [ "TERM" "COLORTERM" "LANG" "LC_ALL" "TZ" "TZDIR" "LOCALE_ARCHIVE" "USER" "LOGNAME" ] # sole env crossing in
+, readOnlyPaths ? [ ]
+, readWritePaths ? [ ]
+, tcpPorts ? [ ] # connect + bind; empty = no TCP
 }:
 
+# Landlock policies have no ~ expansion; relative paths would grant nothing.
 assert lib.assertMsg (lib.hasPrefix "/" (toString directory))
   "mkHolm(${name}): `directory` must be an absolute path";
 
 let
   tomlFormat = pkgs.formats.toml { };
 
-  # --- the holm's environment: one merged profile --------------------
   profileEnv = pkgs.buildEnv {
     name = "holm-${name}-env";
     paths = [ shell pkgs.coreutils ] ++ packages;
@@ -50,16 +35,10 @@ let
     homeDirectory = directory;
   };
 
-  # --- Island profile: deny-by-default Landlock policy ----------------
-  # The profile ships the SAME base file the island binary embeds
-  # (./island-default-base.toml, one source of truth) — `island update`
-  # recognizes it as current — plus a holm-specific file with the
-  # directory, ttys (for pty-opening programs like tmux), and
-  # the caller's extra grants. Files in a profile COMPOSE: grants union,
-  # handled access rights intersect — so each standalone file must
-  # declare the full ruleset, and note that hand-written files dropped
-  # in the profile dir can WIDEN access; to genuinely tighten, stack a
-  # second profile: `island run -p <name> -p strict -- ...`.
+  # Extends island-default-base.toml (shipped below). Files in a profile
+  # COMPOSE — grants union, handled accesses intersect — so this file must
+  # declare the full ruleset, sibling files can WIDEN, and tightening
+  # needs a stacked second profile (`island run -p a -p b`).
   holmRules = {
     abi = 6;
     ruleset = [{
@@ -70,6 +49,7 @@ let
     path_beneath = [
       {
         allowed_access = [ "abi.read_write" ];
+        # ttys: pty-allocating programs (tmux, script) open these themselves
         parent = [ directory "/dev/tty" "/dev/pts" "/dev/ptmx" ]
           ++ readWritePaths;
       }
@@ -96,12 +76,9 @@ let
        "$out/landlock/20-holm.toml"
   '';
 
-  # --- launcher: runs INSIDE the sandbox, in two stages ---------------
-  # Stage 1 (mainland env, as spawned by island) re-execs itself through
-  # `env -i` carrying only the allowlist. Stage 2 (fresh env) puts the
-  # holm profile — and nothing else — on PATH, sources the profile's
-  # etc/profile.d/*.sh (this is how e.g. hm-session-vars.sh arrives),
-  # and execs $SHELL (login) or the given command. No `set -u` —
+  # Runs inside the sandbox. Stage 1 re-execs through `env -i` carrying
+  # only the allowlist; stage 2 builds PATH from the profile alone and
+  # sources its profile.d (how hm-session-vars arrives). No `set -u`:
   # profile.d scripts are not written for it.
   launcher = pkgs.writeShellScript "holm-${name}-launch" ''
     if [ -z "''${__HOLM_CLEAN:-}" ]; then
@@ -112,6 +89,9 @@ let
       exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}" "$0" "$@"
     fi
     unset __HOLM_CLEAN
+    # NixOS login/interactive shells source /etc/set-environment, which
+    # would reimport the full system PATH and variables; guard it off.
+    export __NIXOS_SET_ENVIRONMENT_DONE=1
     export PATH="${profileEnv}/bin"
     for f in ${profileEnv}/etc/profile.d/*.sh; do
       # shellcheck disable=SC1090
@@ -135,9 +115,9 @@ pkgs.writeShellApplication {
   runtimeInputs = [ island pkgs.coreutils ];
 
   text = ''
-    # Sync the declarative profile into Island's config dir: link current
-    # files, prune store links from older generations, keep hand-written
-    # ones.
+    # Island only reads profiles from its config dir; sync ours in,
+    # pruning store links from older generations, keeping hand-written
+    # files.
     cfg="''${XDG_CONFIG_HOME:-$HOME/.config}/island/profiles/${name}"
     mkdir -p "$cfg/landlock"
     ln -sfT ${profile}/profile.toml "$cfg/profile.toml"
@@ -154,7 +134,6 @@ pkgs.writeShellApplication {
     mkdir -p ${lib.escapeShellArg directory}
 
     ${lib.optionalString (holmFiles != null) ''
-      # Materialize this holm's dotfiles (no-op when unchanged).
       ${homeLinker}/bin/${homeLinker.name}
     ''}
 

@@ -1,45 +1,28 @@
 # nix-holm
 
-**holm** — landlocked island-homes for your shell.
+Named shell executables, each running in an isolated user environment: its
+own `$HOME`, its own packages and dotfiles, sandboxed with
+[Island](https://github.com/landlock-lsm/island) (Landlock). A *holm* is a
+small island.
 
-*holm* (Old Norse **holmr**): a small island — the one in Stock**holm**. One
-letter from *home*, which is exactly what each one is.
+Two libraries share this flake:
 
-Holm builds **separate named shell executables** — `work-shell`, `oss-shell`,
-`untrusted-run` — where each command drops you onto its own *holm*: an
-isolated user environment with its own `$HOME`, sandboxed by
-[Island](https://github.com/landlock-lsm/island) (the Landlock policy is
-the reef around it). Your mainland home stays untouched, unreadable, and
-un-leaked.
-
-Two libraries share this repo and flake:
-
-- **nix-holm** (`lib.mkHolm`) — the core. A holm's contents are just two
-  inputs: a list of `packages` for its PATH, and a `holmFiles` derivation
-  linked into its home. Trivial to build by hand.
-- **nix-holm-manager** (`lib.mkHolmManager`) — plugs a full
-  **home-manager configuration** into those same two inputs: `home-path`
-  becomes the packages, `home-files` becomes `holmFiles`, and
-  `home.sessionVariables` arrive through the profile's
-  `etc/profile.d/*.sh`, which the launcher sources generically.
+- **`lib.mkHolm`** — core. A holm's contents are a list of `packages` (its
+  PATH) and a `holmFiles` derivation (linked into its home).
+- **`lib.mkHolmManager`** — evaluates a home-manager configuration and maps
+  it onto the core: `home-path` → `packages`, `home-files` → `holmFiles`,
+  `home.sessionVariables` via the profile's `etc/profile.d/*.sh`.
 
 ```
-$ work-shell                 # links the holm's dotfiles, enters the sandbox
-holm(work-shell): linking dotfiles...
+$ work-shell
 $ echo $HOME
 /home/alice/islands/work
-$ git config user.email      # this holm's identity, from ITS home-manager config
+$ git config user.email        # this holm's identity
 alice@corp.example
-$ env | grep -c SSH_AUTH     # mainland environment never crosses over
-0
 $ ls /home/alice/.ssh
 ls: cannot open directory '/home/alice/.ssh': Permission denied
-$ work-shell git status      # or run one command inside the same environment
+$ work-shell git status        # run a single command inside
 ```
-
-Note the direction of the relationship: home-manager does not configure
-the sandbox — **home-manager (optionally) furnishes the world *inside*
-the sandbox**. Each holm evaluates an independent HM home; or none at all.
 
 ## Usage
 
@@ -52,192 +35,157 @@ inputs = {
 };
 ```
 
-With home-manager (nix-holm-manager):
+With home-manager:
 
 ```nix
 nix-holm.lib.mkHolmManager
-  {
-    inherit pkgs;
-    inherit (inputs) home-manager;
-    island = nix-holm.packages.${pkgs.system}.island;
-  }
+  { inherit pkgs home-manager;
+    island = nix-holm.packages.${pkgs.system}.island; }
   {
     name = "work-shell";
-    directory = "/home/alice/islands/work";  # the holm's $HOME (absolute)
-    username = "alice";                       # for home.username (eval-time only)
+    directory = "/home/alice/islands/work";
+    username = "alice";
     tcpPorts = [ 443 22 ];
     modules = [{
-      home.packages = [ pkgs.ripgrep pkgs.kubectl ];
+      home.packages = [ pkgs.ripgrep ];
       programs.bash.enable = true;
       programs.git = {
         enable = true;
-        userName = "Alice @ Work";
         userEmail = "alice@corp.example";
       };
     }];
   }
 ```
 
-By hand (nix-holm core, no home-manager anywhere):
+Without:
 
 ```nix
-nix-holm.lib.mkHolm { inherit pkgs; island = ...; } {
+nix-holm.lib.mkHolm { inherit pkgs island; } {
   name = "plain-shell";
   directory = "/home/alice/islands/plain";
-  packages = [ pkgs.ripgrep pkgs.jq ];
-  environment.EDITOR = "vi";
-  dotfiles = pkgs.runCommand "plain-dotfiles" { } ''
+  packages = [ pkgs.ripgrep ];
+  holmFiles = pkgs.runCommand "plain-dotfiles" { } ''
     mkdir -p "$out"
     printf '[user]\n  name = Alice\n' > "$out/.gitconfig"
   '';
 }
 ```
 
-Install the result anywhere: `environment.systemPackages`,
-`users.users.alice.packages`, `nix profile install`, or `home.packages` of
-your *real* home-manager — the outer HM only installs the executable.
-`home-manager` may be a flake input **or** any HM source path/tarball.
-`nix run .#demo-shell` builds a demo; see `examples/`.
+Install the result via `environment.systemPackages`, `home.packages`,
+`nix profile install`, etc. `home-manager` may be a flake input or any
+source path. Demos: `nix run .#demo-shell`, `nix run .#demo-home-shell`.
+See `examples/`.
 
-### Options — mkHolm (core)
+### Options — mkHolm
 
 | option | default | meaning |
 |---|---|---|
 | `name` | — | executable and Island profile name |
 | `directory` | — | the holm's `$HOME`; absolute; created on launch; the only read/write hierarchy by default |
-| `packages` | `[ ]` | on PATH inside, next to the `shell` + coreutils baseline; their `etc/profile.d/*.sh` are sourced on entry |
+| `packages` | `[ ]` | on PATH inside, next to the `shell` + coreutils baseline; their `etc/profile.d/*.sh` are sourced |
 | `holmFiles` | `null` | derivation linked (generation-aware) into the holm's `$HOME` |
-| `environment` | `{ }` | extra env vars exported inside the fresh environment |
-| `shell` | `pkgs.bashInteractive` | becomes `$SHELL` inside; runs as a login shell with no args; CLI args run an arbitrary command instead (`work-shell git status`) |
+| `environment` | `{ }` | env vars exported inside |
+| `shell` | `pkgs.bashInteractive` | `$SHELL` inside; runs as a login shell with no args; CLI args run instead |
 | `passEnv` | terminal, locale, user vars | the only variables that cross from your session into the holm |
 | `readOnlyPaths` | `[ ]` | extra hierarchies readable inside |
 | `readWritePaths` | `[ ]` | extra hierarchies read/writable inside |
-| `tcpPorts` | `[ ]` | TCP ports usable inside (connect + bind); empty = no TCP at all |
+| `tcpPorts` | `[ ]` | TCP ports usable inside (connect + bind); empty = no TCP |
 
-### Options — mkHolmManager (adds home-manager)
+### Options — mkHolmManager
 
-Takes every mkHolm option above, plus:
+All mkHolm options, plus:
 
 | option | default | meaning |
 |---|---|---|
-| `username` | — | `home.username` for the holm's HM evaluation |
-| `modules` | `[ ]` | this holm's home-manager modules |
+| `username` | — | `home.username` (evaluation-time only) |
+| `modules` | `[ ]` | the holm's home-manager modules |
 | `stateVersion` | `"25.05"` | `home.stateVersion` |
-
-`home-path` is appended to `packages` and `home-files` becomes `holmFiles`.
 
 ## How it works
 
-Island reads profiles from `~/.config/island/profiles/<name>/`
-(`profile.toml` + [landlockconfig](https://github.com/landlock-lsm/landlockconfig)
-TOML policies) and runs commands with `island run -p <name> -- cmd`.
-`mkHolm` produces a wrapper that, per launch:
+Island reads profiles from `~/.config/island/profiles/<name>/` and runs
+commands with `island run -p <name> -- cmd`. The generated wrapper, per
+launch:
 
-1. **Syncs the profile**: symlinks `profile.toml`, the composed base
-   policy, and the holm's rules into Island's config dir, pruning store
-   links from older generations. Hand-written `*.toml` files you drop
-   next to them survive. Files within a profile **compose** — grants
-   union, handled access rights intersect — so a local file can also
-   *widen* access; to genuinely tighten, stack a second profile as an
-   extra Landlock layer: `island run -p <name> -p strict -- ...`.
-2. **Links the dotfiles** (`nix/mk-home-linker.nix`) — any derivation's
-   tree; the linker is the useful core of home-manager's
-   `linkGeneration`, extracted: leaf-by-leaf symlinks so
-   directories stay real, refuse-to-clobber safety, pruning of links (and
-   emptied directories) that vanished between generations, no-op when
-   unchanged. The full HM activation script is deliberately not run: its
-   nix-profile step can fall back to the *shared*
-   `/nix/var/nix/profiles/per-user/$USER` on a fresh home (holms would
-   clobber each other's and your real HM's generation pointer), it needs
-   the nix daemon, and its hooks assume a login home. Known limitation:
-   `home.activation.*` / `onChange` hooks don't run. (These HM caveats
-   apply to nix-holm-manager; the core linker just links trees.)
-3. **Enters the sandbox** with a two-stage launcher: stage 1 re-execs
-   itself through `env -i` carrying only `passEnv` (default: `TERM`,
-   `COLORTERM`, `LANG`, `LC_ALL`, `TZ`, `USER`, `LOGNAME`) plus
-   `HOME=<directory>` and `SHELL`; stage 2 — now in a fresh environment —
-   sets `PATH` to the holm's merged profile — and nothing else: no
-   system profile, no mainland `PATH` — sources the profile's
-   `etc/profile.d/*.sh` (with nix-holm-manager that's where
-   `hm-session-vars.sh` and thus `home.sessionVariables` come from),
-   exports `environment`, points `TMPDIR` at `$HOME/.tmp`, and execs
-   `$SHELL -l` or your arguments.
+1. Syncs the Nix-rendered profile into that directory (pruning store links
+   from older generations; hand-written `*.toml` files survive).
+2. Links `holmFiles` into the holm: leaf-by-leaf symlinks (directories
+   stay real), refuses to overwrite unmanaged files, prunes links and
+   emptied directories that vanished between generations, no-op when
+   unchanged. Home-manager's activation script is deliberately not run:
+   its profile step can fall back to the shared
+   `/nix/var/nix/profiles/per-user/$USER`, it needs the nix daemon, and
+   its hooks assume a login home. Consequently `home.activation.*` and
+   `onChange` hooks do not run.
+3. Enters the sandbox with a fresh environment: only `passEnv` (default
+   `TERM COLORTERM LANG LC_ALL TZ TZDIR LOCALE_ARCHIVE USER LOGNAME`)
+   plus `HOME` and `SHELL` cross over. `PATH` is the holm's merged
+   profile only; the profile's `etc/profile.d/*.sh` are sourced;
+   `__NIXOS_SET_ENVIRONMENT_DONE=1` is exported so NixOS login/zsh
+   shells do not reimport the system environment from
+   `/etc/set-environment`; `TMPDIR` is `$HOME/.tmp`; then `$SHELL -l` or
+   the given arguments run.
 
-The Landlock policy is deny-by-default: read+execute on `/nix/store`
-only (that still covers `/bin/sh` and `/usr/bin/env` shebangs — those are
-symlinks, and Landlock checks the store object a path *resolves* to),
-read-only `/etc`, read/write only on the holm's directory and ttys; no
-TCP unless `tcpPorts` says so; signals and abstract unix sockets are
-scoped to the sandbox. The base of this policy is
-`nix/island-default-base.toml`, a complete Nix-native replacement for
-upstream's FHS default: it is patched into the island binary at build
-time (embedded via `include_str!`, so `island create` writes it and
-`island update` migrates older profiles to it) and shipped verbatim in
-every holm profile under its canonical name, so `island update`
-recognizes holm profiles as current — one reviewable file, one source
-of truth. The whole HM environment
-is part of the executable's Nix closure — building the shell builds the
-home, GC can't collect it, `nix copy` ships it as one unit.
+The Landlock policy denies by default: read+execute on `/nix/store` only
+(this covers `/bin/sh` and `/usr/bin/env` shebangs — Landlock checks the
+object a path resolves to), read-only `/etc`, read/write on the holm's
+directory and ttys, no TCP unless `tcpPorts` is set, signals and abstract
+unix sockets scoped to the sandbox. The base lives in
+`nix/island-default-base.toml`, replaces upstream's FHS default inside
+the island binary (embedded via `include_str!`, so `island create` and
+`island update` use it), and is shipped verbatim in every holm profile.
 
-## Notes & caveats
+## Notes
 
-- Island is upstream-declared **work in progress**; treat this as
+- Island is upstream-declared work in progress; treat this as
   defense-in-depth, not a container boundary. Landlock denies paths but
-  doesn't hide them; passing socket addresses (D-Bus, SSH agent, display)
-  through `passEnv` re-extends the sandbox through whatever those sockets
-  can do — and needs matching path grants anyway.
-- Requires Landlock (kernel ≥ 5.13; the targeted ABI 6 ≈ 6.7+; NixOS
-  enables it by default). Policy paths must be absolute; missing paths
-  only warn.
-- To debug denials: `island run --log-audit -p <name> -- <cmd>` (Linux
-  ≥ 6.15) — the profile is on disk, so the CLI works directly.
-- Inside a holm, `~` means the holm's home everywhere, including in its
-  HM modules. Launch cost after the first run: one `readlink`.
-- Only the holm's declared environment is on `PATH`; every holm gets its
-  `shell` + coreutils as a baseline, everything else goes in `packages`
-  (or `home.packages`). System tools remain *executable by absolute path*
-  (the store-wide grant is the documented default — Landlock denies, it
-  doesn't hide). Files in the profile dir compose additively; to
-  restrict further, create a second, stricter profile and stack it:
-  `island run -p <name> -p strict -- ...` (separate Landlock layers
-  intersect).
-- Since Nix owns the policies, `island update` has nothing to manage in
-  these profiles — expected.
+  does not hide them. Passing socket addresses (D-Bus, SSH agent,
+  display) via `passEnv` extends the sandbox through those sockets and
+  requires matching path grants.
+- Requires Landlock, ABI 6 (Linux ≥ 6.7; enabled by default on NixOS).
+  Policy paths must be absolute; missing paths only warn.
+- Files within a profile compose: grants union, handled accesses
+  intersect. Sibling files can widen access; to restrict, stack a second
+  profile: `island run -p <name> -p strict -- ...`.
+- Only the holm's profile is on `PATH` (baseline: `shell` + coreutils).
+  System tools remain executable by absolute path under the store-wide
+  grant.
+- Debug denials with `island run --log-audit -p <name> -- cmd`
+  (Linux ≥ 6.15).
+- Inside a holm, `~` is the holm's home everywhere, including in its HM
+  modules. Steady-state launch cost is one `readlink`.
 
 ## Development
 
 ```console
-$ nix fmt                 # nixpkgs-fmt
-$ nix flake check -L      # builds island + the demo shell
+$ nix fmt
+$ nix flake check -L
 $ nix run .#demo-shell
 ```
 
-Commit `flake.lock` after the first `nix flake check`. When bumping the
-Island rev: update `rev` + `hash` in `nix/island-package.nix` and
-regenerate `nix/Cargo.lock` with `cargo generate-lockfile` (upstream does
-not commit a lockfile), and diff upstream's
-`assets/landlock/island-default-base.toml` against our whole-file
-replacement `nix/island-default-base.toml`, merging structural changes
-by hand.
+Commit `flake.lock` after the first check. When bumping the Island rev:
+update `rev` + `hash` in `nix/island-package.nix`, regenerate
+`nix/Cargo.lock` (`cargo generate-lockfile`), and diff upstream's
+`assets/landlock/island-default-base.toml` against
+`nix/island-default-base.toml`.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE). Island itself is MIT OR Apache-2.0.
+MIT — see [LICENSE](./LICENSE). Island is MIT OR Apache-2.0.
 
 ## Layout
 
 ```
 flake.nix
 LICENSE
-.github/workflows/ci.yml   # fmt + flake check
+.github/workflows/ci.yml
 nix/
-  island-package.nix       # buildRustPackage for Island (the sandboxer)
-  island-default-base.toml # Nix-native base (whole-file replacement):
-                           #   embedded in island, shipped in every holm
-  Cargo.lock               # vendored (upstream doesn't commit one)
-  mk-holm.nix              # nix-holm core: profile, policy, launcher, wrapper
-  mk-holm-manager.nix      # nix-holm-manager: home-manager -> packages + dotfiles
-  mk-home-linker.nix       # generation-aware dotfile linker
+  island-package.nix        # buildRustPackage for Island
+  island-default-base.toml  # base policy: embedded in island, shipped in holms
+  Cargo.lock                # vendored (upstream commits none)
+  mk-holm.nix               # core: profile, policy, launcher, wrapper
+  mk-holm-manager.nix       # home-manager -> packages + holmFiles
+  mk-home-linker.nix        # generation-aware dotfile linker
 examples/
   flake-usage.nix
   plain-nix.nix

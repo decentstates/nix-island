@@ -1,11 +1,5 @@
-# Package for https://github.com/landlock-lsm/island
-#
-# Upstream has no releases and does not commit a Cargo.lock, so we vendor a
-# lockfile (./Cargo.lock, generated with `cargo generate-lockfile` at the
-# pinned rev) and link it into the source tree.
-#
-# The landlockconfig dependency is a git dependency; `allowBuiltinFetchGit`
-# lets importCargoLock fetch it without a manually maintained outputHash.
+# https://github.com/landlock-lsm/island — no releases, no committed
+# Cargo.lock (vendored at ./Cargo.lock; regenerate on rev bump).
 { lib
 , rustPlatform
 , fetchFromGitHub
@@ -20,33 +14,25 @@ rustPlatform.buildRustPackage rec {
     owner = "landlock-lsm";
     repo = "island";
     rev = "05a9d699fbf30289fd2af4311becf38ceb334df2";
-    # NAR hash of the unpacked GitHub tarball at `rev`. When bumping `rev`,
-    # refresh with:
-    #   nix run nixpkgs#nix-prefetch-github -- landlock-lsm island --rev <rev>
-    # and regenerate ./Cargo.lock (upstream doesn't commit one):
-    #   cargo generate-lockfile
+    # refresh: nix run nixpkgs#nix-prefetch-github -- landlock-lsm island --rev <rev>
     hash = "sha256-H3+BQxUtogcO0LdO8ayHH1aThg6+SZW+++ixelvzUxA=";
   };
 
   cargoLock = {
     lockFile = ./Cargo.lock;
-    allowBuiltinFetchGit = true;
+    allowBuiltinFetchGit = true; # landlockconfig is a git dep; no outputHash needed
   };
 
   postPatch = ''
     ln -sf ${./Cargo.lock} Cargo.lock
-    # Nix-native default base policy (whole-file replacement; embedded
-    # via include_str! at build time, so `island create` writes it and
-    # `island update` migrates older profiles to it). The same file is
-    # shipped verbatim in every nix-holm profile.
+    # Nix-native base; embedded via include_str!, so `island create`
+    # writes it and `island update` migrates older profiles to it.
     cp ${./island-default-base.toml} assets/landlock/island-default-base.toml
   '';
 
   nativeBuildInputs = [ installShellFiles ];
 
-  # Tests exercise Landlock and expect a writable sandbox-capable kernel;
-  # the Nix build sandbox is not a good place for them.
-  doCheck = false;
+  doCheck = false; # tests need a Landlock-capable kernel, not the build sandbox
 
   postInstall = ''
     installShellCompletion --cmd island \

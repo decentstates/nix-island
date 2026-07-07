@@ -1,28 +1,16 @@
 # Generation-aware dotfile linker — the useful core of home-manager's
-# `linkGeneration` phase, extracted so launching a holm never runs the full
-# activation script. Why not just run `activationPackage/activate`:
-#
-#   * Its nix-profile step picks `$HOME/.local/state/nix/profiles` only if
-#     that directory already exists; on a FRESH island home it doesn't, so
-#     it falls back to the SHARED /nix/var/nix/profiles/per-user/$USER —
-#     holms would clobber each other's (and your real home-manager's)
-#     generation pointer.
-#   * It needs the nix daemon at launch; pure linking doesn't.
-#   * Its module activation hooks are written for real login homes.
-#
-# What we keep, matching HM's semantics:
-#   * leaf-by-leaf symlinks into home-files, so directories in $HOME stay
-#     real and writable;
-#   * refuse to clobber files we don't manage;
-#   * on generation change, prune links that vanished and directories that
-#     became empty.
+# linkGeneration. The full HM activation script is deliberately not run:
+# on a fresh home its profile step falls back to the SHARED
+# /nix/var/nix/profiles/per-user/$USER (holms would clobber each other's
+# and the real HM generation pointer), it needs the nix daemon, and its
+# hooks assume a login home. Consequently home.activation.* / onChange
+# hooks don't run.
 { pkgs, lib ? pkgs.lib }:
 
 { name, holmFiles, homeDirectory }:
 
 let
-  # Relative paths of every leaf in the dotfile tree, computed at build
-  # time (LC_ALL=C so `comm` can diff old vs new manifests at runtime).
+  # LC_ALL=C so `comm` can diff old vs new manifests at runtime.
   manifest = pkgs.runCommand "holm-${name}-manifest" { } ''
     cd ${holmFiles}
     find . \( -type f -o -type l \) -print | sed 's|^\./||' | LC_ALL=C sort > "$out"
@@ -43,8 +31,8 @@ pkgs.writeShellApplication {
     echo "holm(${name}): linking dotfiles..." >&2
     mkdir -p "$state"
 
-    # Refuse to clobber anything we don't manage (links into the current,
-    # previous, or any HM-generation home-files tree are ours).
+    # Only links into the current/previous/an HM generation may be
+    # replaced; anything else aborts the launch.
     while IFS= read -r rel; do
       tgt="$ihome/$rel"
       if [ -e "$tgt" ] || [ -L "$tgt" ]; then
@@ -65,14 +53,13 @@ pkgs.writeShellApplication {
       fi
     done < "$manifest"
 
-    # Link the new generation.
+    # Leaf-by-leaf, so directories in $HOME stay real and writable.
     while IFS= read -r rel; do
       mkdir -p "$ihome/$(dirname "$rel")"
       ln -sfT "$files/$rel" "$ihome/$rel"
     done < "$manifest"
 
-    # Prune links present in the previous generation but not this one,
-    # then any directories that became empty.
+    # Prune links that vanished between generations, then emptied dirs.
     if [ -n "$old" ] && [ -f "$state/manifest" ]; then
       comm -23 "$state/manifest" "$manifest" | while IFS= read -r rel; do
         tgt="$ihome/$rel"
@@ -89,10 +76,8 @@ pkgs.writeShellApplication {
       done
     fi
 
-    # `install`, not `cp`: the source lives in the store with mode 0444,
-    # and cp would copy those bits — making the NEXT generation change
-    # fail with EACCES. install unlinks and recreates, which also heals
-    # states written before this fix.
+    # install, not cp: the source is a 0444 store file and cp would copy
+    # those bits, breaking the NEXT generation change with EACCES.
     install -m 644 "$manifest" "$state/manifest"
     ln -sfT "$files" "$marker"
   '';

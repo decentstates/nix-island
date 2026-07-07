@@ -1,33 +1,18 @@
-# Holms with their own home-manager configurations — flake usage.
-#
-# In your own flake:
-#
-#   inputs = {
-#     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-#     home-manager.url = "github:nix-community/home-manager";
-#     home-manager.inputs.nixpkgs.follows = "nixpkgs";
-#     nix-holm.url = "github:youruser/nix-holm";
-#   };
-#
-# then build shells like below and install them wherever you like
-# (environment.systemPackages, home.packages of your *real* home-manager,
-# nix profile install, ...).
+# Flake usage. Inputs: nixpkgs, home-manager (follows nixpkgs),
+# nix-holm.url = "github:youruser/nix-holm". Install the results anywhere
+# (systemPackages, your real HM's home.packages, nix profile install).
 { pkgs, home-manager, nix-holm }:
 
 let
   island = nix-holm.packages.${pkgs.system}.island;
 
-  # Core: packages + a dotfiles derivation, no home-manager involved.
   mkHolm = nix-holm.lib.mkHolm { inherit pkgs island; };
-
-  # Manager: the same holms, furnished by home-manager configurations.
   mkHolmManager = nix-holm.lib.mkHolmManager {
     inherit pkgs island home-manager;
   };
 in
 {
-  # A hand-built holm: what nix-holm-manager produces, minus home-manager.
-  # `holmFiles` is any derivation; build the tree however you like.
+  # Hand-built (core): `holmFiles` is any derivation.
   plain-shell = mkHolm {
     name = "plain-shell";
     directory = "/home/alice/islands/plain";
@@ -40,9 +25,6 @@ in
     '';
   };
 
-  # `work-shell`: its own $HOME at ~/islands/work with a work git identity
-  # and work-only tools; TCP limited to HTTPS + SSH. Your real dotfiles are
-  # neither used nor readable inside.
   work-shell = mkHolmManager {
     name = "work-shell";
     directory = "/home/alice/islands/work";
@@ -52,7 +34,7 @@ in
       ({ pkgs, ... }: {
         home.packages = with pkgs; [ ripgrep jq gh kubectl ];
 
-        programs.bash.enable = true; # gives the holm its own .bashrc
+        programs.bash.enable = true;
         programs.starship.enable = true;
 
         programs.git = {
@@ -63,8 +45,8 @@ in
 
         programs.ssh = {
           enable = true;
-          matchBlocks."git.corp.example".identityFile =
-            "~/.ssh/id_work"; # ~ here = the HOLM's home
+          # ~ = the HOLM's home
+          matchBlocks."git.corp.example".identityFile = "~/.ssh/id_work";
         };
 
         home.sessionVariables.KUBECONFIG = "$HOME/.kube/work.yaml";
@@ -72,14 +54,12 @@ in
     ];
   };
 
-  # `oss-shell`: same machine, completely different identity, toolset, and
-  # shell — so you always know where you are.
   oss-shell = mkHolmManager {
     name = "oss-shell";
     directory = "/home/alice/islands/oss";
     username = "alice";
     tcpPorts = [ 443 22 ];
-    shell = pkgs.zsh; # pair with programs.zsh.enable for its own zshrc
+    shell = pkgs.zsh; # pair with programs.zsh.enable
     modules = [
       ({ pkgs, ... }: {
         home.packages = with pkgs; [ ripgrep tokei ];
@@ -93,8 +73,7 @@ in
     ];
   };
 
-  # `untrusted-run`: a minimal offline holm for running sketchy things —
-  # `untrusted-run npx some-tool`. No tcpPorts = no network.
+  # no tcpPorts = offline
   untrusted-run = mkHolmManager {
     name = "untrusted-run";
     directory = "/home/alice/islands/untrusted";
