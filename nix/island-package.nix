@@ -35,6 +35,10 @@ rustPlatform.buildRustPackage rec {
 
   postPatch = ''
     ln -sf ${./Cargo.lock} Cargo.lock
+    # Nix-native default base policy (whole-file replacement; embedded
+    # via include_str! at build time, so `island create` writes it and
+    # `island update` migrates older profiles to it). The same file is
+    # shipped verbatim in every nix-holm profile.
     cp ${./island-default-base.toml} assets/landlock/island-default-base.toml
   '';
 

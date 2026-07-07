@@ -27,13 +27,13 @@ let
 in
 {
   # A hand-built holm: what nix-holm-manager produces, minus home-manager.
-  # `dotfiles` is any derivation; build the tree however you like.
+  # `holmFiles` is any derivation; build the tree however you like.
   plain-shell = mkHolm {
     name = "plain-shell";
     directory = "/home/alice/islands/plain";
     packages = with pkgs; [ ripgrep jq ];
     environment.EDITOR = "vi";
-    dotfiles = pkgs.runCommand "plain-dotfiles" { } ''
+    holmFiles = pkgs.runCommand "plain-dotfiles" { } ''
       mkdir -p "$out"
       printf '[user]\n  name = Alice\n  email = alice@example.invalid\n' \
         > "$out/.gitconfig"

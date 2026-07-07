@@ -10,7 +10,7 @@ let
   };
 
   # Core (no home-manager): import ../nix/mk-holm.nix { inherit pkgs; }
-  # and pass `packages` + a `dotfiles` derivation instead.
+  # and pass `packages` + a `holmFiles` derivation instead.
   mkHolmManager = import ../nix/mk-holm-manager.nix {
     inherit pkgs home-manager;
   };

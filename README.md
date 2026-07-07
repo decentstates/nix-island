@@ -15,11 +15,11 @@ un-leaked.
 Two libraries share this repo and flake:
 
 - **nix-holm** (`lib.mkHolm`) — the core. A holm's contents are just two
-  inputs: a list of `packages` for its PATH, and a `dotfiles` derivation
+  inputs: a list of `packages` for its PATH, and a `holmFiles` derivation
   linked into its home. Trivial to build by hand.
 - **nix-holm-manager** (`lib.mkHolmManager`) — plugs a full
   **home-manager configuration** into those same two inputs: `home-path`
-  becomes the packages, `home-files` becomes the dotfiles, and
+  becomes the packages, `home-files` becomes `holmFiles`, and
   `home.sessionVariables` arrive through the profile's
   `etc/profile.d/*.sh`, which the launcher sources generically.
 
@@ -106,7 +106,7 @@ your *real* home-manager — the outer HM only installs the executable.
 | `name` | — | executable and Island profile name |
 | `directory` | — | the holm's `$HOME`; absolute; created on launch; the only read/write hierarchy by default |
 | `packages` | `[ ]` | on PATH inside, next to the `shell` + coreutils baseline; their `etc/profile.d/*.sh` are sourced on entry |
-| `dotfiles` | `null` | derivation linked (generation-aware) into the holm's `$HOME` |
+| `holmFiles` | `null` | derivation linked (generation-aware) into the holm's `$HOME` |
 | `environment` | `{ }` | extra env vars exported inside the fresh environment |
 | `shell` | `pkgs.bashInteractive` | becomes `$SHELL` inside; runs as a login shell with no args; CLI args run an arbitrary command instead (`work-shell git status`) |
 | `passEnv` | terminal, locale, user vars | the only variables that cross from your session into the holm |
@@ -124,7 +124,7 @@ Takes every mkHolm option above, plus:
 | `modules` | `[ ]` | this holm's home-manager modules |
 | `stateVersion` | `"25.05"` | `home.stateVersion` |
 
-`home-path` is appended to `packages` and `home-files` becomes `dotfiles`.
+`home-path` is appended to `packages` and `home-files` becomes `holmFiles`.
 
 ## How it works
 

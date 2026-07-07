@@ -27,7 +27,7 @@
             name = "demo-shell";
             directory = "/tmp/holm-demo";
             packages = [ pkgs.ripgrep ];
-            homeFiles = pkgs.writeTextDir ".gitconfig" ''
+            holmFiles = pkgs.writeTextDir ".gitconfig" ''
               [user]
                 name = Demo
             '';
@@ -58,8 +58,6 @@
       # nix-holm core: hand-built holms, no home-manager involved.
       # nix-holm core: packages on PATH + a dotfiles derivation
       lib.mkHolm = import ./nix/mk-holm.nix;
-      # nix-holm-manager: the same, furnished by a home-manager configuration
-      lib.mkHolmManager = import ./nix/mk-holm-manager.nix;
       # nix-holm-manager: holms furnished by a home-manager configuration.
       lib.mkHolmManager = import ./nix/mk-holm-manager.nix;
     };

@@ -4,7 +4,7 @@
 # directory, then calls the nix-holm core with exactly its two inputs:
 #   packages += home-path    (home.packages + programs.*; brings
 #                             hm-session-vars.sh in via etc/profile.d)
-#   dotfiles  = home-files   (the rendered dotfile tree)
+#   holmFiles = home-files   (the rendered dotfile tree)
 # All other mkHolm arguments pass straight through.
 { pkgs
 , lib ? pkgs.lib
@@ -37,5 +37,5 @@ in
 mkHolm (builtins.removeAttrs args [ "username" "modules" "stateVersion" ] // {
   packages = (args.packages or [ ])
     ++ [ "${home.activationPackage}/home-path" ];
-  dotfiles = "${home.activationPackage}/home-files";
+  holmFiles = "${home.activationPackage}/home-files";
 })

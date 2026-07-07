@@ -5,7 +5,7 @@
 #   * `packages`  — merged (with the shell + coreutils baseline) into one
 #                   profile; its bin/ is the ONLY PATH inside, and every
 #                   etc/profile.d/*.sh in it is sourced on entry;
-#   * `dotfiles`  — any derivation whose tree is linked, leaf by leaf and
+#   * `holmFiles` — any derivation whose tree is linked, leaf by leaf and
 #                   generation-aware, into the holm's $HOME.
 # nix-holm-manager (mk-holm-manager.nix) plugs home-manager into exactly
 # these two inputs.
@@ -23,7 +23,7 @@
 { name # executable and Island profile name, e.g. "work-shell"
 , directory # the holm's $HOME; absolute; created on launch
 , packages ? [ ] # on PATH inside, next to the shell + coreutils baseline
-, dotfiles ? null # derivation linked into the holm's $HOME
+, holmFiles ? null # derivation linked into the holm's $HOME
 , environment ? { } # extra env vars exported inside the fresh environment
 , shell ? pkgs.bashInteractive # becomes $SHELL; runs (login) when invoked with no args; args run arbitrary commands instead
 , passEnv ? [ "TERM" "COLORTERM" "LANG" "LC_ALL" "TZ" "USER" "LOGNAME" ]
@@ -46,7 +46,7 @@ let
   };
 
   homeLinker = import ./mk-home-linker.nix { inherit pkgs lib; } {
-    inherit name dotfiles;
+    inherit name holmFiles;
     homeDirectory = directory;
   };
 
@@ -153,7 +153,7 @@ pkgs.writeShellApplication {
 
     mkdir -p ${lib.escapeShellArg directory}
 
-    ${lib.optionalString (dotfiles != null) ''
+    ${lib.optionalString (holmFiles != null) ''
       # Materialize this holm's dotfiles (no-op when unchanged).
       ${homeLinker}/bin/${homeLinker.name}
     ''}
