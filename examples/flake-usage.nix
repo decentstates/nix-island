@@ -15,16 +15,35 @@
 { pkgs, home-manager, nix-holm }:
 
 let
-  mkHolm = nix-holm.lib.mkHolm {
-    inherit pkgs home-manager;
-    island = nix-holm.packages.${pkgs.system}.island;
+  island = nix-holm.packages.${pkgs.system}.island;
+
+  # Core: packages + a dotfiles derivation, no home-manager involved.
+  mkHolm = nix-holm.lib.mkHolm { inherit pkgs island; };
+
+  # Manager: the same holms, furnished by home-manager configurations.
+  mkHolmManager = nix-holm.lib.mkHolmManager {
+    inherit pkgs island home-manager;
   };
 in
 {
+  # A hand-built holm: what nix-holm-manager produces, minus home-manager.
+  # `dotfiles` is any derivation; build the tree however you like.
+  plain-shell = mkHolm {
+    name = "plain-shell";
+    directory = "/home/alice/islands/plain";
+    packages = with pkgs; [ ripgrep jq ];
+    environment.EDITOR = "vi";
+    dotfiles = pkgs.runCommand "plain-dotfiles" { } ''
+      mkdir -p "$out"
+      printf '[user]\n  name = Alice\n  email = alice@example.invalid\n' \
+        > "$out/.gitconfig"
+    '';
+  };
+
   # `work-shell`: its own $HOME at ~/islands/work with a work git identity
   # and work-only tools; TCP limited to HTTPS + SSH. Your real dotfiles are
   # neither used nor readable inside.
-  work-shell = mkHolm {
+  work-shell = mkHolmManager {
     name = "work-shell";
     directory = "/home/alice/islands/work";
     username = "alice";
@@ -55,7 +74,7 @@ in
 
   # `oss-shell`: same machine, completely different identity, toolset, and
   # shell — so you always know where you are.
-  oss-shell = mkHolm {
+  oss-shell = mkHolmManager {
     name = "oss-shell";
     directory = "/home/alice/islands/oss";
     username = "alice";
@@ -76,7 +95,7 @@ in
 
   # `untrusted-run`: a minimal offline holm for running sketchy things —
   # `untrusted-run npx some-tool`. No tcpPorts = no network.
-  untrusted-run = mkHolm {
+  untrusted-run = mkHolmManager {
     name = "untrusted-run";
     directory = "/home/alice/islands/untrusted";
     username = "alice";

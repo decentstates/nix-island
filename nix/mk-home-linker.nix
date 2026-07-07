@@ -18,13 +18,13 @@
 #     became empty.
 { pkgs, lib ? pkgs.lib }:
 
-{ name, homeFiles, homeDirectory }:
+{ name, dotfiles, homeDirectory }:
 
 let
   # Relative paths of every leaf in the dotfile tree, computed at build
   # time (LC_ALL=C so `comm` can diff old vs new manifests at runtime).
   manifest = pkgs.runCommand "holm-${name}-manifest" { } ''
-    cd ${homeFiles}
+    cd ${dotfiles}
     find . \( -type f -o -type l \) -print | sed 's|^\./||' | LC_ALL=C sort > "$out"
   '';
 in
@@ -33,7 +33,7 @@ pkgs.writeShellApplication {
   runtimeInputs = [ pkgs.coreutils ];
   text = ''
     ihome=${lib.escapeShellArg homeDirectory}
-    files=${homeFiles}
+    files=${dotfiles}
     manifest=${manifest}
     state="$ihome/.local/state/holm"
     marker="$state/home-files"

@@ -9,10 +9,14 @@ let
     # pin it: sha256 = "...";
   };
 
-  mkHolm = import ../nix/mk-holm.nix { inherit pkgs home-manager; };
+  # Core (no home-manager): import ../nix/mk-holm.nix { inherit pkgs; }
+  # and pass `packages` + a `dotfiles` derivation instead.
+  mkHolmManager = import ../nix/mk-holm-manager.nix {
+    inherit pkgs home-manager;
+  };
 in
 {
-  work-shell = mkHolm {
+  work-shell = mkHolmManager {
     name = "work-shell";
     directory = "/home/alice/islands/work"; # absolute; the holm's $HOME
     username = "alice";
