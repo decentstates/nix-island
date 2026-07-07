@@ -35,6 +35,7 @@ rustPlatform.buildRustPackage rec {
 
   postPatch = ''
     ln -sf ${./Cargo.lock} Cargo.lock
+    cp ${./island-default-base.toml} assets/landlock/island-default-base.toml
   '';
 
   nativeBuildInputs = [ installShellFiles ];

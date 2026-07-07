@@ -133,11 +133,13 @@ Island reads profiles from `~/.config/island/profiles/<name>/`
 TOML policies) and runs commands with `island run -p <name> -- cmd`.
 `mkHolm` produces a wrapper that, per launch:
 
-1. **Syncs the profile**: symlinks the Nix-rendered `profile.toml` and
-   Landlock policy into Island's config dir, pruning store links from
-   older generations. Hand-written `*.toml` files you drop next to them
-   survive — and since Landlock layers *intersect*, local files can only
-   tighten the policy, never widen it.
+1. **Syncs the profile**: symlinks `profile.toml`, the composed base
+   policy, and the holm's rules into Island's config dir, pruning store
+   links from older generations. Hand-written `*.toml` files you drop
+   next to them survive. Files within a profile **compose** — grants
+   union, handled access rights intersect — so a local file can also
+   *widen* access; to genuinely tighten, stack a second profile as an
+   extra Landlock layer: `island run -p <name> -p strict -- ...`.
 2. **Links the dotfiles** (`nix/mk-home-linker.nix`) — any derivation's
    tree; the linker is the useful core of home-manager's
    `linkGeneration`, extracted: leaf-by-leaf symlinks so
@@ -166,7 +168,14 @@ only (that still covers `/bin/sh` and `/usr/bin/env` shebangs — those are
 symlinks, and Landlock checks the store object a path *resolves* to),
 read-only `/etc`, read/write only on the holm's directory and ttys; no
 TCP unless `tcpPorts` says so; signals and abstract unix sockets are
-scoped to the sandbox. The whole HM environment
+scoped to the sandbox. The base of this policy is
+`nix/island-default-base.toml`, a complete Nix-native replacement for
+upstream's FHS default: it is patched into the island binary at build
+time (embedded via `include_str!`, so `island create` writes it and
+`island update` migrates older profiles to it) and shipped verbatim in
+every holm profile under its canonical name, so `island update`
+recognizes holm profiles as current — one reviewable file, one source
+of truth. The whole HM environment
 is part of the executable's Nix closure — building the shell builds the
 home, GC can't collect it, `nix copy` ships it as one unit.
 
@@ -187,9 +196,11 @@ home, GC can't collect it, `nix copy` ships it as one unit.
 - Only the holm's declared environment is on `PATH`; every holm gets its
   `shell` + coreutils as a baseline, everything else goes in `packages`
   (or `home.packages`). System tools remain *executable by absolute path*
-  (the store-wide grant is the documented default — Landlock denies,
-  it doesn't hide); drop a hand-written policy layer into the profile
-  dir if you want to intersect that down.
+  (the store-wide grant is the documented default — Landlock denies, it
+  doesn't hide). Files in the profile dir compose additively; to
+  restrict further, create a second, stricter profile and stack it:
+  `island run -p <name> -p strict -- ...` (separate Landlock layers
+  intersect).
 - Since Nix owns the policies, `island update` has nothing to manage in
   these profiles — expected.
 
@@ -204,7 +215,10 @@ $ nix run .#demo-shell
 Commit `flake.lock` after the first `nix flake check`. When bumping the
 Island rev: update `rev` + `hash` in `nix/island-package.nix` and
 regenerate `nix/Cargo.lock` with `cargo generate-lockfile` (upstream does
-not commit a lockfile).
+not commit a lockfile), and diff upstream's
+`assets/landlock/island-default-base.toml` against our whole-file
+replacement `nix/island-default-base.toml`, merging structural changes
+by hand.
 
 ## License
 
@@ -218,6 +232,8 @@ LICENSE
 .github/workflows/ci.yml   # fmt + flake check
 nix/
   island-package.nix       # buildRustPackage for Island (the sandboxer)
+  island-default-base.toml # Nix-native base (whole-file replacement):
+                           #   embedded in island, shipped in every holm
   Cargo.lock               # vendored (upstream doesn't commit one)
   mk-holm.nix              # nix-holm core: profile, policy, launcher, wrapper
   mk-holm-manager.nix      # nix-holm-manager: home-manager -> packages + dotfiles

@@ -51,10 +51,16 @@ let
   };
 
   # --- Island profile: deny-by-default Landlock policy ----------------
-  # Hand-written *.toml dropped next to the generated one survive profile
-  # syncs, and Landlock layers intersect — so local files can tighten the
-  # policy further, never widen it.
-  policy = {
+  # The profile ships the SAME base file the island binary embeds
+  # (./island-default-base.toml, one source of truth) — `island update`
+  # recognizes it as current — plus a holm-specific file with the
+  # directory, ttys (for pty-opening programs like tmux), and
+  # the caller's extra grants. Files in a profile COMPOSE: grants union,
+  # handled access rights intersect — so each standalone file must
+  # declare the full ruleset, and note that hand-written files dropped
+  # in the profile dir can WIDEN access; to genuinely tighten, stack a
+  # second profile: `island run -p <name> -p strict -- ...`.
+  holmRules = {
     abi = 6;
     ruleset = [{
       handled_access_fs = [ "abi.all" ];
@@ -62,34 +68,15 @@ let
       scoped = [ "abi.all" ];
     }];
     path_beneath = [
-      # /nix/store is the only executable hierarchy. That still covers
-      # /bin/sh, /usr/bin/env, and /run/current-system/sw/* shebang
-      # plumbing: those are symlinks, and Landlock checks the store
-      # object a path RESOLVES to — explicit grants on the symlink
-      # directories would be redundant.
-      {
-        allowed_access = [ "abi.read_execute" ];
-        parent = [ "/nix/store" ];
-      }
-      {
-        allowed_access = [ "read_dir" "read_file" ];
-        parent = [ "/etc" "/proc/self" "/proc/cpuinfo" ] ++ readOnlyPaths;
-      }
       {
         allowed_access = [ "abi.read_write" ];
-        parent = [
-          directory
-          "/dev/null"
-          "/dev/zero"
-          "/dev/full"
-          "/dev/random"
-          "/dev/urandom"
-          "/dev/tty"
-          "/dev/pts"
-          "/dev/ptmx"
-        ] ++ readWritePaths;
+        parent = [ directory "/dev/tty" "/dev/pts" "/dev/ptmx" ]
+          ++ readWritePaths;
       }
-    ];
+    ] ++ lib.optional (readOnlyPaths != [ ]) {
+      allowed_access = [ "read_dir" "read_file" ];
+      parent = readOnlyPaths;
+    };
   } // lib.optionalAttrs (tcpPorts != [ ]) {
     net_port = [{
       allowed_access = [ "connect_tcp" "bind_tcp" ];
@@ -103,8 +90,10 @@ let
       workspace = false;
       context = [{ when_beneath = toString directory; }];
     }} "$out/profile.toml"
-    cp ${tomlFormat.generate "policy.toml" policy} \
-       "$out/landlock/00-nix-managed.toml"
+    cp ${./island-default-base.toml} \
+       "$out/landlock/island-default-base.toml"
+    cp ${tomlFormat.generate "holm.toml" holmRules} \
+       "$out/landlock/20-holm.toml"
   '';
 
   # --- launcher: runs INSIDE the sandbox, in two stages ---------------
