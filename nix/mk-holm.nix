@@ -1,211 +1,139 @@
-# mkHolm: build a named executable (e.g. `work-shell`) that launches a
-# shell (or any command) inside an Island/Landlock sandbox — optionally with
-# its OWN home-manager configuration governing that isolated environment.
+# mkHolm: build a named executable (e.g. `work-shell`) that drops you into
+# an isolated home — a "holm" — sandboxed by Island/Landlock and furnished
+# by its own home-manager configuration.
 #
-# Island only reads profiles from $XDG_CONFIG_HOME/island/profiles/<name>/ and
-# has no flag to point at a store path, so the wrapper "bootstraps" on every
-# launch: it (re)links the Nix-generated profile files into that directory,
-# then execs `island run -p <profile>`.
-#
-# With `homeManager` set, the holm's `directory` becomes a full home
-# directory of its own: the wrapper links the holm's home-manager dotfiles
-# into it (generation-aware, via mk-home-linker.nix — the full HM activation
-# script is deliberately NOT run; see that file for why), then enters the
-# sandbox with a FRESH environment: only an explicit allowlist of variables
-# crosses over, HOME points at the holm, hm-session-vars is sourced, and
-# the HM environment (home.packages, programs.*) is on PATH. Your real
-# $HOME stays untouched, unreadable — and un-leaked.
+# On launch the wrapper: (1) symlinks the Nix-rendered Island profile into
+# ~/.config/island/profiles/<name>/ (Island reads only from there); (2)
+# links the holm's dotfiles into its directory, generation-aware, via
+# mk-home-linker.nix — the full HM activation script is deliberately NOT
+# run, see that file for why; (3) execs `island run` with a launcher that
+# resets to a fresh environment (explicit allowlist only), points HOME at
+# the holm, sources hm-session-vars, and runs $SHELL or your arguments.
 { pkgs
 , lib ? pkgs.lib
 , island ? pkgs.callPackage ./island-package.nix { }
-, home-manager ? null # flake input or source path; required for `homeManager`
+, home-manager # flake input or source path (both coerce to a path)
 }:
 
-{ name # executable name, e.g. "work-shell"
-, profileName ? name # Island profile name
-, shell ? pkgs.bashInteractive # the holm's shell: becomes $SHELL inside and runs (as a login shell) when invoked with no args; args run arbitrary commands instead
-, directory ? null # created + cd'd into on launch; granted rw; the holm's $HOME when homeManager is set
-, contexts ? lib.optional (directory != null) directory
-, env ? { } # extra env vars, exported into the holm's fresh environment
-, passEnv ? [
-    # The ONLY variables that cross from the mainland into the holm's
-    # fresh environment (plus HOME when no `directory` is set). Everything
-    # else — SSH_AUTH_SOCK, tokens, D-Bus addresses, your real PATH — is
-    # dropped. Terminal + locale basics:
-    "TERM"
-    "COLORTERM"
-    "LANG"
-    "LC_ALL"
-    "TZ"
-    "USER"
-    "LOGNAME"
-    # Island's workspace feature communicates through these; with
-    # workspace = false they're simply absent and nothing is passed:
-    "XDG_CONFIG_HOME"
-    "XDG_DATA_HOME"
-    "XDG_STATE_HOME"
-    "XDG_CACHE_HOME"
-    "XDG_RUNTIME_DIR"
-    "TMPDIR"
-  ]
-, workspace ? (homeManager == null) # Island's per-profile XDG dirs; off when the holm has its own home
-, logAudit ? false # pass --log-audit (denials in kernel audit log; Linux >= 6.15)
-, syncProfile ? true # set false if something else installs the profile files
-, landlock ? { } # arguments to mk-landlock-policy.nix
-, extraLandlockFiles ? { }
-
-  # Replace the blanket "/nix/store" read+execute grant with the exact
-  # runtime closure of this holm's environment (HM home, launcher,
-  # command), enumerated at build time. Anything outside the closure —
-  # other users' profiles, tools the holm never declared — becomes
-  # unreadable and unexecutable. See README for the tradeoffs.
-, confineToClosure ? false
-, extraClosureRoots ? [ ] # additional store paths/derivations to allow
-
-  # Per-holm home-manager configuration (null = plain sandboxed shell):
-  # {
-  #   username;              # your real login name (HM activation checks $USER)
-  #   modules = [ ... ];     # this holm's home-manager modules
-  #   stateVersion ? "25.05";
-  #   extraSpecialArgs ? { };
-  # }
-, homeManager ? null
+{ name # executable and Island profile name, e.g. "work-shell"
+, directory # the holm's $HOME; absolute; created on launch
+, username # your login name, for home.username (evaluation-time only)
+, modules ? [ ] # this holm's home-manager modules
+, stateVersion ? "25.05"
+, shell ? pkgs.bashInteractive # becomes $SHELL; runs (login) when invoked with no args; args run arbitrary commands instead
+, passEnv ? [ "TERM" "COLORTERM" "LANG" "LC_ALL" "TZ" "USER" "LOGNAME" ]
+  # ^ the only variables that cross from your session into the holm
+, readOnlyPaths ? [ ] # extra hierarchies readable inside
+, readWritePaths ? [ ] # extra hierarchies read/writable inside
+, tcpPorts ? [ ] # TCP ports usable inside (connect + bind); empty = no TCP
 }:
+
+assert lib.assertMsg (lib.hasPrefix "/" (toString directory))
+  "mkHolm(${name}): `directory` must be an absolute path";
 
 let
-  # Landlock configs have no ~/$HOME expansion, and the same path is baked
-  # into the policy, so relative/tilde paths would silently grant nothing.
-  _assertAbs = lib.assertMsg
-    (directory == null || lib.hasPrefix "/" (toString directory))
-    "mkHolm(${name}): `directory` must be an absolute path";
-
-  _assertHm = lib.assertMsg
-    (homeManager == null || (directory != null && home-manager != null))
-    ("mkHolm(${name}): `homeManager` needs a `directory` (the holm's "
-      + "home) and a `home-manager` input passed to the builder");
-
-  mkPolicyLib = import ./mk-landlock-policy.nix { inherit lib; };
-  inherit (mkPolicyLib) mkPolicy;
-  mkProfile = import ./mk-profile.nix { inherit pkgs lib; };
-  mkHome = import ./mk-holm-home.nix { inherit pkgs lib; };
   tomlFormat = pkgs.formats.toml { };
 
-  hm =
-    if homeManager == null then null
-    else mkHome {
-      inherit home-manager;
-      inherit (homeManager) username;
-      homeDirectory = directory;
-      modules = homeManager.modules or [ ];
-      stateVersion = homeManager.stateVersion or "25.05";
-      extraSpecialArgs = homeManager.extraSpecialArgs or { };
+  # --- this holm's home-manager configuration -------------------------
+  home = import "${home-manager}/modules" {
+    inherit pkgs;
+    configuration = {
+      imports = modules;
+      home = {
+        inherit username stateVersion;
+        homeDirectory = directory;
+      };
     };
+  };
+  homePath = "${home.activationPackage}/home-path";
 
-  shellExe = lib.getExe shell;
-
-  # PATH inside the fresh environment (the mainland PATH never enters):
-  # the holm's HM environment first, then the system profile.
-  basePath = lib.concatStringsSep ":"
-    (lib.optional (hm != null) "${hm.homePath}/bin"
-      ++ [ "/run/current-system/sw/bin" "/usr/bin" "/bin" ]);
-
-  mkHomeLinker = import ./mk-home-linker.nix { inherit pkgs lib; };
-  homeLinker =
-    if hm == null then null
-    else mkHomeLinker {
-      inherit name;
-      inherit (hm) homeFiles;
-      homeDirectory = directory;
-    };
-
-  # The launch directory must be writable, or the shell can't even
-  # read its own cwd.
-  policyArgs = landlock // {
-    readWritePaths =
-      (landlock.readWritePaths or [ ])
-      ++ lib.optional (directory != null) directory;
-  } // lib.optionalAttrs confineToClosure {
-    # The closure replaces the blanket store grant (appended below).
-    readExecutePaths = lib.subtractLists [ "/nix/store" ]
-      (landlock.readExecutePaths or mkPolicyLib.defaults.readExecutePaths);
+  homeLinker = import ./mk-home-linker.nix { inherit pkgs lib; } {
+    inherit name;
+    homeFiles = "${home.activationPackage}/home-files";
+    homeDirectory = directory;
   };
 
-  basePolicyFile =
-    tomlFormat.generate "holm-${name}-base-policy.toml" (mkPolicy policyArgs);
-
-  # Everything that must be reachable INSIDE the sandbox, as a single
-  # aggregate root whose closure we enumerate at build time. The launcher
-  # references the shell and (via home-path) the whole HM environment.
-  closureRootsFile = pkgs.writeText "holm-${name}-closure-roots"
-    (lib.concatMapStrings (p: "${toString p}\n")
-      ([ innerLaunch ] ++ extraClosureRoots));
-
-  closureList =
-    if pkgs ? writeClosure
-    then pkgs.writeClosure [ closureRootsFile ]
-    else pkgs.writeReferencesToFile closureRootsFile;
-
-  # TOML permits appending further [[path_beneath]] entries after other
-  # top-level tables; store paths never need escaping.
-  policyFile =
-    if !confineToClosure then basePolicyFile
-    else
-      pkgs.runCommand "holm-${name}-policy.toml" { } ''
-        {
-          cat ${basePolicyFile}
-          echo
-          echo '# Runtime closure of this holm (generated at build time).'
-          echo '[[path_beneath]]'
-          echo 'allowed_access = ["abi.read_execute"]'
-          echo 'parent = ['
-          sed 's|.*|    "&",|' ${closureList}
-          echo ']'
-        } > "$out"
-      '';
-
-  profileDrv = mkProfile {
-    name = profileName;
-    inherit contexts workspace extraLandlockFiles;
-    # env is exported by the launcher (inside the fresh environment), not
-    # injected via the profile — profile env would be wiped by `env -i`.
-    landlockPolicyFile = policyFile;
+  # --- Island profile: deny-by-default Landlock policy ----------------
+  # NixOS essentials are baked in; /run/wrappers (setuid) is deliberately
+  # absent. Hand-written *.toml dropped next to the generated one survive
+  # profile syncs, and Landlock layers intersect — so local files can
+  # tighten the policy further, never widen it.
+  policy = {
+    abi = 6;
+    ruleset = [{
+      handled_access_fs = [ "abi.all" ];
+      handled_access_net = [ "abi.all" ];
+      scoped = [ "abi.all" ];
+    }];
+    path_beneath = [
+      {
+        allowed_access = [ "abi.read_execute" ];
+        parent = [
+          "/nix/store"
+          "/run/current-system"
+          "/run/booted-system"
+          "/run/opengl-driver"
+          "/bin"
+          "/usr/bin"
+        ];
+      }
+      {
+        allowed_access = [ "read_dir" "read_file" ];
+        parent = [ "/etc" "/proc/self" "/proc/cpuinfo" ] ++ readOnlyPaths;
+      }
+      {
+        allowed_access = [ "abi.read_write" ];
+        parent = [
+          directory
+          "/dev/null"
+          "/dev/zero"
+          "/dev/full"
+          "/dev/random"
+          "/dev/urandom"
+          "/dev/tty"
+          "/dev/pts"
+          "/dev/ptmx"
+        ] ++ readWritePaths;
+      }
+    ];
+  } // lib.optionalAttrs (tcpPorts != [ ]) {
+    net_port = [{
+      allowed_access = [ "connect_tcp" "bind_tcp" ];
+      port = tcpPorts;
+    }];
   };
 
-  runArgs = lib.escapeShellArgs
-    (lib.optional logAudit "--log-audit" ++ [ "-p" profileName ]);
+  profile = pkgs.runCommand "holm-profile-${name}" { } ''
+    mkdir -p "$out/landlock"
+    cp ${tomlFormat.generate "profile.toml" {
+      workspace = false;
+      context = [{ when_beneath = toString directory; }];
+    }} "$out/profile.toml"
+    cp ${tomlFormat.generate "policy.toml" policy} \
+       "$out/landlock/00-nix-managed.toml"
+  '';
 
-  # Runs INSIDE the sandbox, in two stages. Stage 1 (mainland env, as
-  # spawned by island) re-execs itself through `env -i` with an explicit
-  # allowlist — nothing else crosses over. Stage 2 (fresh env) builds
-  # PATH, loads the HM session, exports the holm's static env, and execs
-  # $SHELL (login) or the requested command. No `set -u` — this sources
-  # hm-session-vars.sh, which is not written for it.
-  innerLaunch = pkgs.writeShellScript "holm-${name}-launch" ''
+  # --- launcher: runs INSIDE the sandbox, in two stages ---------------
+  # Stage 1 (mainland env, as spawned by island) re-execs itself through
+  # `env -i` carrying only the allowlist. Stage 2 (fresh env) builds PATH
+  # from the holm's HM environment plus the system profile, loads
+  # hm-session-vars, and execs $SHELL (login) or the given command.
+  # No `set -u` — hm-session-vars.sh is not written for it.
+  launcher = pkgs.writeShellScript "holm-${name}-launch" ''
     if [ -z "''${__HOLM_CLEAN:-}" ]; then
-      keep=(
-        __HOLM_CLEAN=1
-        SHELL=${shellExe}
-        ${if directory != null
-          then "HOME=${lib.escapeShellArg directory}"
-          else ''"HOME=''${HOME:-/}"''}
-      )
+      keep=(__HOLM_CLEAN=1 SHELL=${lib.getExe shell} HOME=${lib.escapeShellArg directory})
       for v in ${toString passEnv}; do
         if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
       done
       exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}" "$0" "$@"
     fi
     unset __HOLM_CLEAN
-    export PATH=${lib.escapeShellArg basePath}
-    ${lib.optionalString (hm != null) ''
-      hmVars="${hm.homePath}/etc/profile.d/hm-session-vars.sh"
-      # shellcheck disable=SC1090
-      [ -f "$hmVars" ] && . "$hmVars"
-      export PATH="${hm.homePath}/bin:$PATH"
-    ''}
-    ${lib.concatStrings (lib.mapAttrsToList
-      (n: v: "export ${n}=${lib.escapeShellArg (toString v)}
-")
-      env)}
+    export PATH="${homePath}/bin:/run/current-system/sw/bin:/usr/bin:/bin"
+    hmVars="${homePath}/etc/profile.d/hm-session-vars.sh"
+    # shellcheck disable=SC1090
+    [ -f "$hmVars" ] && . "$hmVars"
+    export TMPDIR="$HOME/.tmp"
+    mkdir -p "$TMPDIR"
     cd "$HOME" || exit 1
     if [ "$#" -gt 0 ]; then
       exec "$@"
@@ -214,43 +142,36 @@ let
     fi
   '';
 in
-assert _assertAbs;
-assert _assertHm;
 pkgs.writeShellApplication {
   inherit name;
   runtimeInputs = [ island pkgs.coreutils ];
 
   text = ''
-    ${lib.optionalString syncProfile ''
-      # --- sync the declarative profile into Island's config dir ---
-      cfg="''${XDG_CONFIG_HOME:-$HOME/.config}/island/profiles/${profileName}"
-      mkdir -p "$cfg/landlock"
-      ln -sfT ${profileDrv}/profile.toml "$cfg/profile.toml"
-      # Drop stale policy symlinks from previous generations, keep any
-      # hand-written local files.
-      for f in "$cfg/landlock"/*; do
-        [ -L "$f" ] || continue
-        case "$(readlink "$f")" in
-          /nix/store/*) rm -f "$f" ;;
-        esac
-      done
-      for f in ${profileDrv}/landlock/*; do
-        ln -sfT "$f" "$cfg/landlock/$(basename "$f")"
-      done
-    ''}
-    ${lib.optionalString (directory != null) ''
-      mkdir -p ${lib.escapeShellArg directory}
-      cd ${lib.escapeShellArg directory}
-    ''}
-    ${lib.optionalString (hm != null) ''
-      # --- materialize this holm's dotfiles (generation-aware; no nix
-      # daemon, no shared per-user profile state; no-op when unchanged) ---
-      ${homeLinker}/bin/${homeLinker.name}
-    ''}
+    # Sync the declarative profile into Island's config dir: link current
+    # files, prune store links from older generations, keep hand-written
+    # ones.
+    cfg="''${XDG_CONFIG_HOME:-$HOME/.config}/island/profiles/${name}"
+    mkdir -p "$cfg/landlock"
+    ln -sfT ${profile}/profile.toml "$cfg/profile.toml"
+    for f in "$cfg/landlock"/*; do
+      [ -L "$f" ] || continue
+      case "$(readlink "$f")" in
+        /nix/store/*) rm -f "$f" ;;
+      esac
+    done
+    for f in ${profile}/landlock/*; do
+      ln -sfT "$f" "$cfg/landlock/$(basename "$f")"
+    done
+
+    mkdir -p ${lib.escapeShellArg directory}
+
+    # Materialize this holm's dotfiles (no-op when unchanged).
+    ${homeLinker}/bin/${homeLinker.name}
+
     if [ "$#" -gt 0 ]; then
-      exec island run ${runArgs} -- ${innerLaunch} "$@"
+      exec island run -p ${lib.escapeShellArg name} -- ${launcher} "$@"
     else
-      exec island run ${runArgs} -- ${innerLaunch}
+      exec island run -p ${lib.escapeShellArg name} -- ${launcher}
     fi
   '';
 }

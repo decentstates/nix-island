@@ -20,16 +20,17 @@
         island = pkgs.callPackage ./nix/island-package.nix { };
         default = island;
 
-        # Pure demo (no home-manager): a throwaway jailed shell — try:
-        #   nix run .#demo-shell
-        # For holms with their own home-manager configuration, see
-        # examples/flake-usage.nix (those need your real username, so
-        # they can't be a generic flake output).
+        # Demo holm — try: nix run .#demo-shell
         demo-shell =
-          (import ./nix/mk-holm.nix { inherit pkgs island; }) {
+          (import ./nix/mk-holm.nix { inherit pkgs island home-manager; }) {
             name = "demo-shell";
             directory = "/tmp/holm-demo";
-            landlock.tcpConnectPorts = [ 443 ];
+            username = "demo";
+            tcpPorts = [ 443 ];
+            modules = [ ({ pkgs, ... }: {
+              home.packages = [ pkgs.ripgrep ];
+              programs.bash.enable = true;
+            }) ];
           };
       });
 
@@ -40,15 +41,6 @@
 
       formatter = forAllSystems (pkgs: pkgs.nixpkgs-fmt);
 
-      overlays.default = final: _prev: {
-        island = final.callPackage ./nix/island-package.nix { };
-      };
-
-      # Plain-Nix API:
-      #   let mkHolm = nix-holm.lib.mkHolm { inherit pkgs home-manager island; };
-      #   in mkHolm { name = "work-shell"; homeManager = { ... }; ... }
       lib.mkHolm = import ./nix/mk-holm.nix;
-      lib.mkHolmHome = import ./nix/mk-holm-home.nix;
-      lib.landlockPolicy = import ./nix/mk-landlock-policy.nix; # { defaults, mkPolicy }
     };
 }

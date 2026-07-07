@@ -1,4 +1,4 @@
-# Islands with their own home-manager configurations — flake usage.
+# Holms with their own home-manager configurations — flake usage.
 #
 # In your own flake:
 #
@@ -21,74 +21,65 @@ let
   };
 in
 {
-  # `work-shell`: its own $HOME at ~/islands/work with a work git identity,
-  # work-only tools, and network limited to HTTPS + SSH. Your real dotfiles
-  # are neither used nor readable inside.
+  # `work-shell`: its own $HOME at ~/islands/work with a work git identity
+  # and work-only tools; TCP limited to HTTPS + SSH. Your real dotfiles are
+  # neither used nor readable inside.
   work-shell = mkHolm {
     name = "work-shell";
     directory = "/home/alice/islands/work";
-    landlock.tcpConnectPorts = [ 443 22 ];
-    homeManager = {
-      username = "alice"; # your real login name
-      stateVersion = "25.05";
-      modules = [
-        ({ pkgs, ... }: {
-          home.packages = with pkgs; [ ripgrep jq gh kubectl ];
+    username = "alice";
+    tcpPorts = [ 443 22 ];
+    modules = [
+      ({ pkgs, ... }: {
+        home.packages = with pkgs; [ ripgrep jq gh kubectl ];
 
-          programs.bash.enable = true; # gives the holm its own .bashrc
-          programs.starship.enable = true;
+        programs.bash.enable = true; # gives the holm its own .bashrc
+        programs.starship.enable = true;
 
-          programs.git = {
-            enable = true;
-            userName = "Alice @ Work";
-            userEmail = "alice@corp.example";
-          };
+        programs.git = {
+          enable = true;
+          userName = "Alice @ Work";
+          userEmail = "alice@corp.example";
+        };
 
-          programs.ssh = {
-            enable = true;
-            matchBlocks."git.corp.example".identityFile =
-              "~/.ssh/id_work"; # ~ here = the ISLAND's home
-          };
+        programs.ssh = {
+          enable = true;
+          matchBlocks."git.corp.example".identityFile =
+            "~/.ssh/id_work"; # ~ here = the HOLM's home
+        };
 
-          home.sessionVariables.KUBECONFIG = "$HOME/.kube/work.yaml";
-        })
-      ];
-    };
+        home.sessionVariables.KUBECONFIG = "$HOME/.kube/work.yaml";
+      })
+    ];
   };
 
-  # `oss-shell`: same machine, completely different identity and toolset,
-  # different prompt so you always know where you are.
+  # `oss-shell`: same machine, completely different identity, toolset, and
+  # shell — so you always know where you are.
   oss-shell = mkHolm {
     name = "oss-shell";
     directory = "/home/alice/islands/oss";
-    landlock.tcpConnectPorts = [ 443 22 ];
-    # Strict mode: only this holm's declared environment (its HM closure)
-    # is readable/executable — no blanket /nix/store grant.
-    confineToClosure = true;
-    homeManager = {
-      username = "alice";
-      modules = [
-        ({ pkgs, ... }: {
-          home.packages = with pkgs; [ ripgrep tokei ];
-          programs.zsh.enable = true;
-          programs.git = {
-            enable = true;
-            userName = "alicehacks";
-            userEmail = "alice@personal.example";
-            signing.signByDefault = false;
-          };
-        })
-      ];
-    };
-    # zsh as this holm's $SHELL instead of the default bash
-    # (pair with programs.zsh.enable above so it has its own zshrc):
-    shell = pkgs.zsh;
+    username = "alice";
+    tcpPorts = [ 443 22 ];
+    shell = pkgs.zsh; # pair with programs.zsh.enable for its own zshrc
+    modules = [
+      ({ pkgs, ... }: {
+        home.packages = with pkgs; [ ripgrep tokei ];
+        programs.zsh.enable = true;
+        programs.git = {
+          enable = true;
+          userName = "alicehacks";
+          userEmail = "alice@personal.example";
+        };
+      })
+    ];
   };
 
-  # `scratch-shell`: no home-manager at all — just a jailed throwaway shell
-  # (Island's own workspace isolation is used instead).
-  scratch-shell = mkHolm {
-    name = "scratch-shell";
-    directory = "/home/alice/islands/scratch";
+  # `untrusted-run`: a minimal offline holm for running sketchy things —
+  # `untrusted-run npx some-tool`. No tcpPorts = no network.
+  untrusted-run = mkHolm {
+    name = "untrusted-run";
+    directory = "/home/alice/islands/untrusted";
+    username = "alice";
+    modules = [ ({ pkgs, ... }: { home.packages = [ pkgs.nodejs ]; }) ];
   };
 }
