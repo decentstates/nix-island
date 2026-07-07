@@ -11,9 +11,10 @@
 # directory of its own: the wrapper links the holm's home-manager dotfiles
 # into it (generation-aware, via mk-home-linker.nix — the full HM activation
 # script is deliberately NOT run; see that file for why), then enters the
-# sandbox with HOME pointed there, hm-session-vars sourced, and the HM
-# environment (home.packages, programs.*) on PATH. Your real $HOME stays
-# both untouched and unreadable.
+# sandbox with a FRESH environment: only an explicit allowlist of variables
+# crosses over, HOME points at the holm, hm-session-vars is sourced, and
+# the HM environment (home.packages, programs.*) is on PATH. Your real
+# $HOME stays untouched, unreadable — and un-leaked.
 { pkgs
 , lib ? pkgs.lib
 , island ? pkgs.callPackage ./island-package.nix { }
@@ -22,10 +23,31 @@
 
 { name # executable name, e.g. "work-shell"
 , profileName ? name # Island profile name
-, command ? [ (lib.getExe pkgs.bashInteractive) "-l" ] # default command when run with no args
+, shell ? pkgs.bashInteractive # the holm's shell: becomes $SHELL inside and runs (as a login shell) when invoked with no args; args run arbitrary commands instead
 , directory ? null # created + cd'd into on launch; granted rw; the holm's $HOME when homeManager is set
 , contexts ? lib.optional (directory != null) directory
-, env ? { }
+, env ? { } # extra env vars, exported into the holm's fresh environment
+, passEnv ? [
+    # The ONLY variables that cross from the mainland into the holm's
+    # fresh environment (plus HOME when no `directory` is set). Everything
+    # else — SSH_AUTH_SOCK, tokens, D-Bus addresses, your real PATH — is
+    # dropped. Terminal + locale basics:
+    "TERM"
+    "COLORTERM"
+    "LANG"
+    "LC_ALL"
+    "TZ"
+    "USER"
+    "LOGNAME"
+    # Island's workspace feature communicates through these; with
+    # workspace = false they're simply absent and nothing is passed:
+    "XDG_CONFIG_HOME"
+    "XDG_DATA_HOME"
+    "XDG_STATE_HOME"
+    "XDG_CACHE_HOME"
+    "XDG_RUNTIME_DIR"
+    "TMPDIR"
+  ]
 , workspace ? (homeManager == null) # Island's per-profile XDG dirs; off when the holm has its own home
 , logAudit ? false # pass --log-audit (denials in kernel audit log; Linux >= 6.15)
 , syncProfile ? true # set false if something else installs the profile files
@@ -79,6 +101,14 @@ let
       extraSpecialArgs = homeManager.extraSpecialArgs or { };
     };
 
+  shellExe = lib.getExe shell;
+
+  # PATH inside the fresh environment (the mainland PATH never enters):
+  # the holm's HM environment first, then the system profile.
+  basePath = lib.concatStringsSep ":"
+    (lib.optional (hm != null) "${hm.homePath}/bin"
+      ++ [ "/run/current-system/sw/bin" "/usr/bin" "/bin" ]);
+
   mkHomeLinker = import ./mk-home-linker.nix { inherit pkgs lib; };
   homeLinker =
     if hm == null then null
@@ -104,14 +134,11 @@ let
     tomlFormat.generate "holm-${name}-base-policy.toml" (mkPolicy policyArgs);
 
   # Everything that must be reachable INSIDE the sandbox, as a single
-  # aggregate root whose closure we enumerate at build time. Activation
-  # runs outside the sandbox, but innerLaunch references the activation
-  # package (via home-path), so the whole HM environment is included.
+  # aggregate root whose closure we enumerate at build time. The launcher
+  # references the shell and (via home-path) the whole HM environment.
   closureRootsFile = pkgs.writeText "holm-${name}-closure-roots"
     (lib.concatMapStrings (p: "${toString p}\n")
-      (command
-        ++ lib.optional (hm != null) innerLaunch
-        ++ extraClosureRoots));
+      ([ innerLaunch ] ++ extraClosureRoots));
 
   closureList =
     if pkgs ? writeClosure
@@ -138,31 +165,54 @@ let
 
   profileDrv = mkProfile {
     name = profileName;
-    inherit contexts env workspace extraLandlockFiles;
+    inherit contexts workspace extraLandlockFiles;
+    # env is exported by the launcher (inside the fresh environment), not
+    # injected via the profile — profile env would be wiped by `env -i`.
     landlockPolicyFile = policyFile;
   };
 
   runArgs = lib.escapeShellArgs
     (lib.optional logAudit "--log-audit" ++ [ "-p" profileName ]);
 
-  # Runs INSIDE the sandbox: adopt the holm home, load the HM session,
-  # then exec the requested command. No `set -u` here — hm-session-vars.sh
-  # is not written for it.
-  innerLaunch = lib.optionalString (hm != null)
-    (pkgs.writeShellScript "holm-${name}-launch" ''
-      export HOME=${lib.escapeShellArg directory}
-      export USER=${lib.escapeShellArg homeManager.username}
-      cd "$HOME" || exit 1
+  # Runs INSIDE the sandbox, in two stages. Stage 1 (mainland env, as
+  # spawned by island) re-execs itself through `env -i` with an explicit
+  # allowlist — nothing else crosses over. Stage 2 (fresh env) builds
+  # PATH, loads the HM session, exports the holm's static env, and execs
+  # $SHELL (login) or the requested command. No `set -u` — this sources
+  # hm-session-vars.sh, which is not written for it.
+  innerLaunch = pkgs.writeShellScript "holm-${name}-launch" ''
+    if [ -z "''${__HOLM_CLEAN:-}" ]; then
+      keep=(
+        __HOLM_CLEAN=1
+        SHELL=${shellExe}
+        ${if directory != null
+          then "HOME=${lib.escapeShellArg directory}"
+          else ''"HOME=''${HOME:-/}"''}
+      )
+      for v in ${toString passEnv}; do
+        if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
+      done
+      exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}" "$0" "$@"
+    fi
+    unset __HOLM_CLEAN
+    export PATH=${lib.escapeShellArg basePath}
+    ${lib.optionalString (hm != null) ''
       hmVars="${hm.homePath}/etc/profile.d/hm-session-vars.sh"
       # shellcheck disable=SC1090
       [ -f "$hmVars" ] && . "$hmVars"
       export PATH="${hm.homePath}/bin:$PATH"
-      if [ "$#" -gt 0 ]; then
-        exec "$@"
-      else
-        exec ${lib.escapeShellArgs command}
-      fi
-    '');
+    ''}
+    ${lib.concatStrings (lib.mapAttrsToList
+      (n: v: "export ${n}=${lib.escapeShellArg (toString v)}
+")
+      env)}
+    cd "$HOME" || exit 1
+    if [ "$#" -gt 0 ]; then
+      exec "$@"
+    else
+      exec "$SHELL" -l
+    fi
+  '';
 in
 assert _assertAbs;
 assert _assertHm;
@@ -197,19 +247,10 @@ pkgs.writeShellApplication {
       # daemon, no shared per-user profile state; no-op when unchanged) ---
       ${homeLinker}/bin/${homeLinker.name}
     ''}
-    ${lib.optionalString (hm != null) ''
-      if [ "$#" -gt 0 ]; then
-        exec island run ${runArgs} -- ${innerLaunch} "$@"
-      else
-        exec island run ${runArgs} -- ${innerLaunch}
-      fi
-    ''}
-    ${lib.optionalString (hm == null) ''
-      if [ "$#" -gt 0 ]; then
-        exec island run ${runArgs} -- "$@"
-      else
-        exec island run ${runArgs} -- ${lib.escapeShellArgs command}
-      fi
-    ''}
+    if [ "$#" -gt 0 ]; then
+      exec island run ${runArgs} -- ${innerLaunch} "$@"
+    else
+      exec island run ${runArgs} -- ${innerLaunch}
+    fi
   '';
 }

@@ -80,8 +80,9 @@ in
         })
       ];
     };
-    # Enter with zsh instead of the default bash login shell:
-    command = [ "${pkgs.zsh}/bin/zsh" "-l" ];
+    # zsh as this holm's $SHELL instead of the default bash
+    # (pair with programs.zsh.enable above so it has its own zshrc):
+    shell = pkgs.zsh;
   };
 
   # `scratch-shell`: no home-manager at all — just a jailed throwaway shell

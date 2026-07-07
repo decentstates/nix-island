@@ -60,7 +60,9 @@ holm, this repo wires up four pieces:
    - `exec`s `island run -p <name> -- <launcher>`, where the launcher —
      now *inside* the sandbox — sets `HOME`/`USER` to the holm's,
      sources `hm-session-vars.sh`, prepends the HM environment's `bin/`,
-     `cd`s home, and execs your shell (or whatever args you passed).
+     `cd`s home, and execs `$SHELL` as a login shell (or whatever args
+     you passed) — after first re-exec'ing itself through `env -i` so the
+     holm starts from a **fresh environment** (see below).
 
 Deliberately, holm does **not** run home-manager's activation script — it
 extracts the one part that matters. The stock script's nix-profile step
@@ -134,9 +136,10 @@ both API styles are handled).
 |---|---|---|
 | `name` / `profileName` | — / `name` | executable / Island profile name |
 | `directory` | `null` | holm root; created on launch; rw in the policy; the holm's `$HOME` when `homeManager` is set |
-| `command` | `bash -l` | what runs when invoked with no args; args replace it (`work-shell git status`) |
+| `shell` | `pkgs.bashInteractive` | becomes `$SHELL` inside and runs as a login shell when invoked with no args; CLI args run an arbitrary command in the same sandbox instead (`work-shell git status`) |
+| `passEnv` | terminal, locale, user + Island workspace vars | the only variables allowed to cross from your session into the holm |
 | `homeManager` | `null` | `{ username, modules, stateVersion?, extraSpecialArgs? }` — this holm's HM config |
-| `env` | `{ }` | extra env vars injected via the Island profile |
+| `env` | `{ }` | extra env vars exported inside the holm's fresh environment |
 | `workspace` | `homeManager == null` | Island's own isolated XDG dirs + ephemeral TMPDIR; off for HM holms since the HM home *is* the isolation (leaving it on would shadow HM's `~/.config` links) |
 | `landlock.*` | NixOS-safe defaults | `readExecutePaths`, `readOnlyPaths`, `readWritePaths`, `writableDevices`, `tcpConnectPorts`, `tcpBindPorts`, `scoped`, `extraRules` |
 | `confineToClosure` | `false` | replace the blanket `/nix/store` grant with the holm's exact runtime closure (see below) |
@@ -144,6 +147,27 @@ both API styles are handled).
 | `extraLandlockFiles` | `{ }` | additional policy layers (Landlock layers intersect: they can only tighten) |
 | `logAudit` | `false` | log denials to the kernel audit log (Linux ≥ 6.15) |
 | `syncProfile` | `true` | disable if something else installs the profile files |
+
+## Fresh environment
+
+Holms do not inherit your session's environment. The in-sandbox launcher
+re-execs itself through `env -i` carrying only an explicit allowlist —
+by default: `TERM`, `COLORTERM`, `LANG`, `LC_ALL`, `TZ`, `USER`,
+`LOGNAME`, plus the `XDG_*`/`TMPDIR` variables Island's workspace feature
+uses (absent when `workspace = false`), plus `HOME` only when the holm has
+no `directory` of its own. Everything else — `SSH_AUTH_SOCK`, API tokens,
+`DBUS_SESSION_BUS_ADDRESS`, your real `PATH` — never enters. Tune with
+`passEnv`; note that passing socket addresses (D-Bus, SSH agent, display)
+re-extends the sandbox through whatever those sockets can do, and the
+Landlock policy must also grant the socket path for them to work.
+
+Inside, the environment is rebuilt from declared parts: `PATH` is the
+holm's HM environment, then the system profile (`/run/current-system/sw/bin`)
+— the mainland `PATH` is never consulted; `SHELL` is the holm's `shell`;
+`hm-session-vars.sh` supplies `home.sessionVariables`; and `env` entries
+are exported last. This also means Island's per-profile `[[env]]`
+mechanism isn't used — profile-injected variables would be wiped by the
+reset, so holm exports them after it instead.
 
 ## Confining to the closure
 
