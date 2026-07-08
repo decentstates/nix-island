@@ -1,34 +1,19 @@
-# Plain Nix, no flakes: nix-env -if ./examples/plain-nix.nix
+# Core, plain Nix, no home-manager: nix-env -if ./examples/plain-nix.nix
 let
   pkgs = import <nixpkgs> { };
-
-  # a channel (<home-manager>) or a pinned tarball both work
-  home-manager = builtins.fetchTarball {
-    url = "https://github.com/nix-community/home-manager/archive/master.tar.gz";
-    # pin it: sha256 = "...";
-  };
-
-  # core instead: import ../nix/mk-holm.nix, pass packages + holmFiles
-  mkHolmManager = import ../nix/mk-holm-manager.nix {
-    inherit pkgs home-manager;
-  };
+  mkHolm = import ../nix/mk-holm.nix { inherit pkgs; };
 in
 {
-  work-shell = mkHolmManager {
+  work-shell = mkHolm {
     name = "work-shell";
     directory = "/home/alice/islands/work";
-    username = "alice";
+    packages = with pkgs; [ ripgrep jq git ];
+    environment.EDITOR = "vi";
     tcpPorts = [ 443 22 ];
-    modules = [
-      ({ pkgs, ... }: {
-        home.packages = with pkgs; [ ripgrep jq ];
-        programs.bash.enable = true;
-        programs.git = {
-          enable = true;
-          userName = "Alice @ Work";
-          userEmail = "alice@corp.example";
-        };
-      })
-    ];
+    holmFiles = pkgs.runCommand "work-dotfiles" { } ''
+      mkdir -p "$out"
+      printf '[user]\n  name = Alice\n  email = alice@corp.example\n' \
+        > "$out/.gitconfig"
+    '';
   };
 }

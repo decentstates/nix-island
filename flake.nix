@@ -34,28 +34,35 @@
             tcpPorts = [ 443 ];
           };
 
-        # Same idea via nix-holm-manager (home-manager inside):
-        demo-manager-shell =
-          (import ./nix/mk-holm-manager.nix { inherit pkgs island home-manager; }) {
-            name = "demo-manager-shell";
-            directory = "/tmp/holm-manager-demo";
-            username = "demo";
-            tcpPorts = [ 443 ];
-            modules = [ ({ pkgs, ... }: {
-              home.packages = [ pkgs.ripgrep ];
-              programs.bash.enable = true;
-              programs.git = { enable = true; userName = "Demo"; };
-            }) ];
-          };
       });
 
       checks = forAllSystems (pkgs: {
-        inherit (self.packages.${pkgs.system}) island demo-shell demo-manager-shell;
+        inherit (self.packages.${pkgs.system}) island demo-shell;
+        # building the outer home transitively builds the holm wrapper
+        hm-module = (home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            self.homeManagerModules.holm
+            {
+              home = {
+                username = "demo";
+                homeDirectory = "/tmp/holm-demo-home";
+                stateVersion = "25.05";
+              };
+              holm.shells.demo-home-shell.modules =
+                [{ programs.bash.enable = true; }];
+            }
+          ];
+        }).activationPackage;
       });
 
       formatter = forAllSystems (pkgs: pkgs.nixpkgs-fmt);
 
       lib.mkHolm = import ./nix/mk-holm.nix; # packages + holmFiles
-      lib.mkHolmManager = import ./nix/mk-holm-manager.nix; # + home-manager
+
+      homeManagerModules = rec {
+        holm = import ./nix/home-manager-module.nix; # holm.shells.<name>
+        default = holm;
+      };
     };
 }

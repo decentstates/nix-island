@@ -1,6 +1,6 @@
 # nix-holm core: a named executable dropping into an Island/Landlock-
 # sandboxed home. Contents = `packages` (PATH) + `holmFiles` (dotfile
-# tree); mk-holm-manager.nix plugs home-manager into these two inputs.
+# tree); home-manager-module.nix plugs home-manager into these inputs.
 { pkgs
 , lib ? pkgs.lib
 , island ? pkgs.callPackage ./island-package.nix { }

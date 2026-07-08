@@ -9,8 +9,10 @@ Two libraries share this flake:
 
 - **`lib.mkHolm`** — core. A holm's contents are a list of `packages` (its
   PATH) and a `holmFiles` derivation (linked into its home).
-- **`lib.mkHolmManager`** — evaluates a home-manager configuration and maps
-  it onto the core: `home-path` → `packages`, `home-files` → `holmFiles`,
+- **`homeManagerModules.holm`** — declare holms in your home-manager
+  configuration (`holm.shells.<name>`). Each evaluates a nested HM home
+  with the same home-manager (via `modulesPath`) and maps it onto the
+  core: `home-path` → `packages`, `home-files` → `holmFiles`,
   `home.sessionVariables` via the profile's `etc/profile.d/*.sh`.
 
 ```
@@ -35,26 +37,22 @@ inputs = {
 };
 ```
 
-With home-manager:
+With home-manager (in your home configuration):
 
 ```nix
-nix-holm.lib.mkHolmManager
-  { inherit pkgs home-manager;
-    island = nix-holm.packages.${pkgs.system}.island; }
-  {
-    name = "work-shell";
-    directory = "/home/alice/islands/work";
-    username = "alice";
-    tcpPorts = [ 443 22 ];
-    modules = [{
-      home.packages = [ pkgs.ripgrep ];
-      programs.bash.enable = true;
-      programs.git = {
-        enable = true;
-        userEmail = "alice@corp.example";
-      };
-    }];
-  }
+imports = [ nix-holm.homeManagerModules.holm ];
+
+holm.shells.work-shell = {
+  tcpPorts = [ 443 22 ];
+  modules = [{
+    home.packages = [ pkgs.ripgrep ];
+    programs.bash.enable = true;
+    programs.git = {
+      enable = true;
+      userEmail = "alice@corp.example";
+    };
+  }];
+};
 ```
 
 Without:
@@ -71,10 +69,9 @@ nix-holm.lib.mkHolm { inherit pkgs island; } {
 }
 ```
 
-Install the result via `environment.systemPackages`, `home.packages`,
-`nix profile install`, etc. `home-manager` may be a flake input or any
-source path. Demos: `nix run .#demo-shell`, `nix run .#demo-home-shell`.
-See `examples/`.
+Core results install anywhere (`environment.systemPackages`,
+`nix profile install`, ...); module shells land in `home.packages`.
+Demo: `nix run .#demo-shell`. See `examples/`.
 
 ### Options — mkHolm
 
@@ -91,15 +88,18 @@ See `examples/`.
 | `readWritePaths` | `[ ]` | extra hierarchies read/writable inside |
 | `tcpPorts` | `[ ]` | TCP ports usable inside (connect + bind); empty = no TCP |
 
-### Options — mkHolmManager
+### Options — holm.shells.<name> (home-manager module)
 
-All mkHolm options, plus:
+All mkHolm options except `name` and `holmFiles`, plus:
 
 | option | default | meaning |
 |---|---|---|
-| `username` | — | `home.username` (evaluation-time only) |
+| `directory` | `~/holms/<name>` | the holm's `$HOME` |
+| `username` | outer `home.username` | nested `home.username` (evaluation-time only) |
+| `stateVersion` | outer `home.stateVersion` | nested `home.stateVersion` |
 | `modules` | `[ ]` | the holm's home-manager modules |
-| `stateVersion` | `"25.05"` | `home.stateVersion` |
+
+`holm.island` sets the Island package for all shells.
 
 ## How it works
 
@@ -185,7 +185,7 @@ nix/
   island-default-base.toml  # base policy: embedded in island, shipped in holms
   Cargo.lock                # vendored (upstream commits none)
   mk-holm.nix               # core: profile, policy, launcher, wrapper
-  mk-holm-manager.nix       # home-manager -> packages + holmFiles
+  home-manager-module.nix   # holm.shells.<name>: home-manager -> core
   mk-home-linker.nix        # generation-aware dotfile linker
 examples/
   flake-usage.nix
