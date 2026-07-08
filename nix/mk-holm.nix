@@ -76,19 +76,11 @@ let
        "$out/landlock/20-holm.toml"
   '';
 
-  # Runs inside the sandbox. Stage 1 re-execs through `env -i` carrying
-  # only the allowlist; stage 2 builds PATH from the profile alone and
-  # sources its profile.d (how hm-session-vars arrives). No `set -u`:
-  # profile.d scripts are not written for it.
+  # Runs inside the sandbox, in the fresh environment the wrapper built
+  # (env -i + allowlist). Builds PATH from the profile alone and sources
+  # its profile.d (how hm-session-vars arrives). No `set -u`: profile.d
+  # scripts are not written for it.
   launcher = pkgs.writeShellScript "holm-${name}-launch" ''
-    if [ -z "''${__HOLM_CLEAN:-}" ]; then
-      keep=(__HOLM_CLEAN=1 SHELL=${lib.getExe shell} HOME=${lib.escapeShellArg directory})
-      for v in ${toString passEnv}; do
-        if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
-      done
-      exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}" "$0" "$@"
-    fi
-    unset __HOLM_CLEAN
     # NixOS login/interactive shells source /etc/set-environment, which
     # would reimport the full system PATH and variables; guard it off.
     export __NIXOS_SET_ENVIRONMENT_DONE=1
@@ -137,10 +129,20 @@ pkgs.writeShellApplication {
       ${homeLinker}/bin/${homeLinker.name}
     ''}
 
+    # Fresh environment: island itself keeps the caller's env (profile
+    # lookup uses the real HOME); its child starts from env -i plus this
+    # allowlist. env -i, not an unset loop: exported functions and
+    # non-identifier names survive `unset`.
+    keep=(SHELL=${lib.getExe shell} HOME=${lib.escapeShellArg directory})
+    for v in ${toString passEnv}; do
+      if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
+    done
     if [ "$#" -gt 0 ]; then
-      exec island run -p ${lib.escapeShellArg name} -- ${launcher} "$@"
+      exec island run -p ${lib.escapeShellArg name} -- \
+        ${pkgs.coreutils}/bin/env -i "''${keep[@]}" ${launcher} "$@"
     else
-      exec island run -p ${lib.escapeShellArg name} -- ${launcher}
+      exec island run -p ${lib.escapeShellArg name} -- \
+        ${pkgs.coreutils}/bin/env -i "''${keep[@]}" ${launcher}
     fi
   '';
 }

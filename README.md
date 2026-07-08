@@ -117,10 +117,11 @@ launch:
    `/nix/var/nix/profiles/per-user/$USER`, it needs the nix daemon, and
    its hooks assume a login home. Consequently `home.activation.*` and
    `onChange` hooks do not run.
-3. Enters the sandbox with a fresh environment: only `passEnv` (default
+3. Enters the sandbox with a fresh environment: the command island runs
+   is `env -i <allowlist> launcher`, so only `passEnv` (default
    `TERM COLORTERM LANG LC_ALL TZ TZDIR LOCALE_ARCHIVE USER LOGNAME`)
-   plus `HOME` and `SHELL` cross over. `PATH` is the holm's merged
-   profile only; the profile's `etc/profile.d/*.sh` are sourced;
+   plus `HOME` and `SHELL` cross over. Inside, `PATH` is the holm's
+   merged profile only; the profile's `etc/profile.d/*.sh` are sourced;
    `__NIXOS_SET_ENVIRONMENT_DONE=1` is exported so NixOS login/zsh
    shells do not reimport the system environment from
    `/etc/set-environment`; `TMPDIR` is `$HOME/.tmp`; then `$SHELL -l` or
