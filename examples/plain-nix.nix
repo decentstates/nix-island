@@ -1,7 +1,7 @@
 # Core, plain Nix, no home-manager: nix-env -if ./examples/plain-nix.nix
 let
   pkgs = import <nixpkgs> { };
-  mkHolm = import ../nix/mk-holm.nix { inherit pkgs; };
+  mkHolm = (import ../nix/lib.nix).mkHolm { inherit pkgs; };
 in
 {
   work-shell = mkHolm {

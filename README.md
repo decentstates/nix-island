@@ -179,7 +179,7 @@ LICENSE
 .github/workflows/ci.yml
 nix/
   island-package.nix        # buildRustPackage for Island
-  lib.nix                   # shared defaults (passEnv)
+  lib.nix                   # common lib: mkHolm, defaultPassEnv
   island-default-base.toml  # base policy: embedded in island, shipped in holms
   Cargo.lock                # vendored (upstream commits none)
   mk-holm.nix               # core: profile, policy, launcher, wrapper

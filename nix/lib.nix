@@ -1,5 +1,8 @@
-# Shared between mk-holm.nix and home-manager-module.nix.
+# Common import surface: the flake, the home-manager module, and plain
+# Nix all take mkHolm from here.
 {
+  mkHolm = import ./mk-holm.nix;
+
   defaultPassEnv = [
     "TERM"
     "COLORTERM"

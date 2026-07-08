@@ -9,7 +9,7 @@ let
   cfg = config.holm;
   holmLib = import ./lib.nix;
 
-  mkHolm = import ./mk-holm.nix { inherit pkgs; island = cfg.island; };
+  mkHolm = holmLib.mkHolm { inherit pkgs; island = cfg.island; };
 
   evalHome = h: import modulesPath {
     inherit pkgs;
