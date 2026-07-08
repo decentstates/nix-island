@@ -4,7 +4,7 @@
 # outer home's.
 { pkgs, ... }:
 {
-  holm.shells = {
+  holm.holms = {
     work-shell = {
       tcpPorts = [ 443 22 ];
       modules = [
@@ -29,7 +29,7 @@
 
     oss-shell = {
       tcpPorts = [ 443 22 ];
-      shell = pkgs.zsh; # pair with programs.zsh.enable
+      # programs.zsh.enable below also makes zsh this holm's $SHELL
       modules = [
         ({ pkgs, ... }: {
           home.packages = with pkgs; [ ripgrep tokei ];

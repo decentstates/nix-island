@@ -10,7 +10,7 @@ Two libraries share this flake:
 - **`lib.mkHolm`** — core. A holm's contents are a list of `packages` (its
   PATH) and a `holmFiles` derivation (linked into its home).
 - **`homeManagerModules.holm`** — declare holms in your home-manager
-  configuration (`holm.shells.<name>`). Each evaluates a nested HM home
+  configuration (`holm.holms.<name>`). Each evaluates a nested HM home
   with the same home-manager (via `modulesPath`) and maps it onto the
   core: `home-path` → `packages`, `home-files` → `holmFiles`,
   `home.sessionVariables` via the profile's `etc/profile.d/*.sh`.
@@ -42,7 +42,7 @@ With home-manager (in your home configuration):
 ```nix
 imports = [ nix-holm.homeManagerModules.holm ];
 
-holm.shells.work-shell = {
+holm.holms.work-shell = {
   tcpPorts = [ 443 22 ];
   modules = [{
     home.packages = [ pkgs.ripgrep ];
@@ -88,18 +88,15 @@ Demo: `nix run .#demo-shell`. See `examples/`.
 | `readWritePaths` | `[ ]` | extra hierarchies read/writable inside |
 | `tcpPorts` | `[ ]` | TCP ports usable inside (connect + bind); empty = no TCP |
 
-### Options — holm.shells.<name> (home-manager module)
+### Options — holm.holms.<name> (home-manager module)
 
-All mkHolm options except `name` and `holmFiles`, plus:
-
-| option | default | meaning |
-|---|---|---|
-| `directory` | `~/holms/<name>` | the holm's `$HOME` |
-| `username` | outer `home.username` | nested `home.username` (evaluation-time only) |
-| `stateVersion` | outer `home.stateVersion` | nested `home.stateVersion` |
-| `modules` | `[ ]` | the holm's home-manager modules |
-
-`holm.island` sets the Island package for all shells.
+`directory` (default `~/holms/<name>`), `modules` (the holm's
+home-manager modules), and the mkHolm options `environment`, `passEnv`,
+`readOnlyPaths`, `readWritePaths`, `tcpPorts`. The nested
+`home.username`/`home.stateVersion` come from the outer home. Packages
+go in the holm's `home.packages`; `$SHELL` is the shell its modules
+enable (`programs.zsh`/`programs.fish`, else bash). `holm.island` sets
+the Island package for all holms.
 
 ## How it works
 
@@ -182,10 +179,11 @@ LICENSE
 .github/workflows/ci.yml
 nix/
   island-package.nix        # buildRustPackage for Island
+  lib.nix                   # shared defaults (passEnv)
   island-default-base.toml  # base policy: embedded in island, shipped in holms
   Cargo.lock                # vendored (upstream commits none)
   mk-holm.nix               # core: profile, policy, launcher, wrapper
-  home-manager-module.nix   # holm.shells.<name>: home-manager -> core
+  home-manager-module.nix   # holm.holms.<name>: home-manager -> core
   mk-home-linker.nix        # generation-aware dotfile linker
 examples/
   flake-usage.nix

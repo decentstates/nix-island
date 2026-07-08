@@ -1,11 +1,13 @@
 # home-manager module: declare holms inside your home-manager
-# configuration. Each holm.shells.<name> evaluates a nested HM home —
-# via this home-manager's own modulesPath, so no separate input — and
-# installs an executable of the same name.
+# configuration. Each holm.holms.<name> evaluates a nested HM home — via
+# this home-manager's own modulesPath, so no separate input — and
+# installs an executable of the same name. username/stateVersion come
+# from the outer home; packages and the shell from the holm's modules.
 { config, lib, pkgs, modulesPath, ... }:
 
 let
   cfg = config.holm;
+  holmLib = import ./lib.nix;
 
   mkHolm = import ./mk-holm.nix { inherit pkgs; island = cfg.island; };
 
@@ -14,54 +16,44 @@ let
     configuration = {
       imports = h.modules;
       home = {
-        inherit (h) username stateVersion;
+        inherit (config.home) username stateVersion;
         homeDirectory = h.directory;
       };
     };
   };
+
+  # $SHELL = the shell the holm's own configuration enables.
+  # home.sessionVariables.SHELL (sourced later) still overrides.
+  shellOf = home:
+    let c = home.config;
+    in
+    if c.programs.zsh.enable then c.programs.zsh.package
+    else if c.programs.fish.enable then c.programs.fish.package
+    else pkgs.bashInteractive;
 
   mkWrapper = name: h:
     let home = evalHome h;
     in mkHolm {
       inherit name;
       inherit (h)
-        directory shell environment passEnv
+        directory environment passEnv
         readOnlyPaths readWritePaths tcpPorts;
-      packages = h.packages ++ [ "${home.activationPackage}/home-path" ];
+      shell = shellOf home;
+      packages = [ "${home.activationPackage}/home-path" ];
       holmFiles = "${home.activationPackage}/home-files";
     };
 
-  shellModule = { name, ... }: {
+  holmModule = { name, ... }: {
     options = {
       directory = lib.mkOption {
         type = lib.types.str;
         default = "${config.home.homeDirectory}/holms/${name}";
         description = "The holm's $HOME; absolute.";
       };
-      username = lib.mkOption {
-        type = lib.types.str;
-        default = config.home.username;
-        description = "home.username of the nested evaluation.";
-      };
-      stateVersion = lib.mkOption {
-        type = lib.types.str;
-        default = config.home.stateVersion;
-        description = "home.stateVersion of the nested evaluation.";
-      };
       modules = lib.mkOption {
         type = lib.types.listOf lib.types.deferredModule;
         default = [ ];
         description = "The holm's home-manager modules.";
-      };
-      packages = lib.mkOption {
-        type = lib.types.listOf lib.types.package;
-        default = [ ];
-        description = "Extra packages on PATH besides the holm's HM environment.";
-      };
-      shell = lib.mkOption {
-        type = lib.types.package;
-        default = pkgs.bashInteractive;
-        description = "$SHELL inside; runs with no args, CLI args run instead.";
       };
       environment = lib.mkOption {
         type = lib.types.attrsOf lib.types.str;
@@ -70,8 +62,7 @@ let
       };
       passEnv = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        # keep in sync with mk-holm.nix
-        default = [ "TERM" "COLORTERM" "LANG" "LC_ALL" "TZ" "TZDIR" "LOCALE_ARCHIVE" "USER" "LOGNAME" ];
+        default = holmLib.defaultPassEnv;
         description = "Sole variables crossing from the session into the holm.";
       };
       readOnlyPaths = lib.mkOption {
@@ -100,14 +91,14 @@ in
       defaultText = lib.literalExpression "nix-holm's island package";
       description = "Island package used by all holms.";
     };
-    shells = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.submodule shellModule);
+    holms = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule holmModule);
       default = { };
-      description = "Sandboxed shells; each attribute installs an executable of the same name.";
+      description = "Sandboxed holms; each attribute installs an executable of the same name.";
     };
   };
 
-  config = lib.mkIf (cfg.shells != { }) {
-    home.packages = [ cfg.island ] ++ lib.mapAttrsToList mkWrapper cfg.shells;
+  config = lib.mkIf (cfg.holms != { }) {
+    home.packages = [ cfg.island ] ++ lib.mapAttrsToList mkWrapper cfg.holms;
   };
 }

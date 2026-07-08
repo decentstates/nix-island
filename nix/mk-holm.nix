@@ -12,7 +12,7 @@
 , holmFiles ? null # derivation linked into the holm's $HOME
 , environment ? { }
 , shell ? pkgs.bashInteractive # $SHELL inside; runs with no args; CLI args run instead
-, passEnv ? [ "TERM" "COLORTERM" "LANG" "LC_ALL" "TZ" "TZDIR" "LOCALE_ARCHIVE" "USER" "LOGNAME" ] # sole env crossing in
+, passEnv ? (import ./lib.nix).defaultPassEnv # sole env crossing in
 , readOnlyPaths ? [ ]
 , readWritePaths ? [ ]
 , tcpPorts ? [ ] # connect + bind; empty = no TCP

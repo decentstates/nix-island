@@ -49,7 +49,7 @@
                 homeDirectory = "/tmp/holm-demo-home";
                 stateVersion = "25.05";
               };
-              holm.shells.demo-home-shell.modules =
+              holm.holms.demo-home-shell.modules =
                 [{ programs.bash.enable = true; }];
             }
           ];
@@ -61,7 +61,7 @@
       lib.mkHolm = import ./nix/mk-holm.nix; # packages + holmFiles
 
       homeManagerModules = rec {
-        holm = import ./nix/home-manager-module.nix; # holm.shells.<name>
+        holm = import ./nix/home-manager-module.nix; # holm.holms.<name>
         default = holm;
       };
     };
