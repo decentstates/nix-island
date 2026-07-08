@@ -102,27 +102,34 @@ let
       exec "''${SHELL:-bash}" -l
     fi
   '';
+  # Installs the profile where Island reads it, pruning store links from
+  # older generations, keeping hand-written files. Idempotent; run by the
+  # wrapper on launch and (via the module) at home-manager activation.
+  installProfile = pkgs.writeShellApplication {
+    name = "holm-${name}-install-profile";
+    runtimeInputs = [ pkgs.coreutils ];
+    text = ''
+      cfg="''${XDG_CONFIG_HOME:-$HOME/.config}/island/profiles/${name}"
+      mkdir -p "$cfg/landlock"
+      ln -sfT ${profile}/profile.toml "$cfg/profile.toml"
+      for f in "$cfg/landlock"/*; do
+        [ -L "$f" ] || continue
+        case "$(readlink "$f")" in
+          /nix/store/*) rm -f "$f" ;;
+        esac
+      done
+      for f in ${profile}/landlock/*; do
+        ln -sfT "$f" "$cfg/landlock/$(basename "$f")"
+      done
+    '';
+  };
 in
-pkgs.writeShellApplication {
+(pkgs.writeShellApplication {
   inherit name;
   runtimeInputs = [ island pkgs.coreutils ];
 
   text = ''
-    # Island only reads profiles from its config dir; sync ours in,
-    # pruning store links from older generations, keeping hand-written
-    # files.
-    cfg="''${XDG_CONFIG_HOME:-$HOME/.config}/island/profiles/${name}"
-    mkdir -p "$cfg/landlock"
-    ln -sfT ${profile}/profile.toml "$cfg/profile.toml"
-    for f in "$cfg/landlock"/*; do
-      [ -L "$f" ] || continue
-      case "$(readlink "$f")" in
-        /nix/store/*) rm -f "$f" ;;
-      esac
-    done
-    for f in ${profile}/landlock/*; do
-      ln -sfT "$f" "$cfg/landlock/$(basename "$f")"
-    done
+    ${installProfile}/bin/${installProfile.name}
 
     mkdir -p ${lib.escapeShellArg directory}
 
@@ -146,4 +153,6 @@ pkgs.writeShellApplication {
         ${pkgs.coreutils}/bin/env -i "''${keep[@]}" ${launcher}
     fi
   '';
+}) // {
+  inherit installProfile;
 }

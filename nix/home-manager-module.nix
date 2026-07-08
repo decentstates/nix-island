@@ -87,7 +87,16 @@ in
     };
   };
 
-  config = lib.mkIf (cfg.holms != { }) {
-    home.packages = [ cfg.island ] ++ lib.mapAttrsToList mkWrapper cfg.holms;
-  };
+  config =
+    let wrappers = lib.mapAttrsToList mkWrapper cfg.holms;
+    in lib.mkIf (cfg.holms != { }) {
+      home.packages = [ cfg.island ] ++ wrappers;
+
+      # Profiles are in place at switch time, so `island run -p <name>`
+      # works without launching a wrapper first.
+      home.activation.holmProfiles = lib.hm.dag.entryAfter [ "writeBoundary" ]
+        (lib.concatMapStrings
+          (w: "run ${w.installProfile}/bin/${w.installProfile.name}\n")
+          wrappers);
+    };
 }

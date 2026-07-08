@@ -104,8 +104,12 @@ Island reads profiles from `~/.config/island/profiles/<name>/` and runs
 commands with `island run -p <name> -- cmd`. The generated wrapper, per
 launch:
 
-1. Syncs the Nix-rendered profile into that directory (pruning store links
-   from older generations; hand-written `*.toml` files survive).
+1. Runs the holm's profile-install script: links the Nix-rendered
+   profile into that directory, pruning store links from older
+   generations; hand-written `*.toml` files survive. The module also
+   runs it during home-manager activation, so profiles are in place at
+   switch time and `island run -p <name>` works without launching a
+   wrapper first.
 2. Links `holmFiles` into the holm: leaf-by-leaf symlinks (directories
    stay real), refuses to overwrite unmanaged files, prunes links and
    emptied directories that vanished between generations, no-op when
