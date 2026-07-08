@@ -11,8 +11,7 @@
 , packages ? [ ] # on PATH inside (plus shell + coreutils); their etc/profile.d/*.sh are sourced
 , holmFiles ? null # derivation linked into the holm's $HOME
 , environment ? { }
-, shell ? pkgs.bashInteractive # $SHELL inside; runs with no args; CLI args run instead
-, passEnv ? (import ./lib.nix).defaultPassEnv # sole env crossing in
+, passEnv # sole env crossing in; default supplied by lib.nix
 , readOnlyPaths ? [ ]
 , readWritePaths ? [ ]
 , tcpPorts ? [ ] # connect + bind; empty = no TCP
@@ -27,7 +26,7 @@ let
 
   profileEnv = pkgs.buildEnv {
     name = "holm-${name}-env";
-    paths = [ shell pkgs.coreutils ] ++ packages;
+    paths = [ pkgs.bashInteractive pkgs.coreutils ] ++ packages;
   };
 
   homeLinker = import ./mk-home-linker.nix { inherit pkgs lib; } {
@@ -98,7 +97,9 @@ let
     if [ "$#" -gt 0 ]; then
       exec "$@"
     else
-      exec "$SHELL" -l
+      # SHELL comes from the holm's own config (home.sessionVariables /
+      # environment) when set; the baseline bash otherwise.
+      exec "''${SHELL:-bash}" -l
     fi
   '';
 in
@@ -133,7 +134,7 @@ pkgs.writeShellApplication {
     # lookup uses the real HOME); its child starts from env -i plus this
     # allowlist. env -i, not an unset loop: exported functions and
     # non-identifier names survive `unset`.
-    keep=(SHELL=${lib.getExe shell} HOME=${lib.escapeShellArg directory})
+    keep=(HOME=${lib.escapeShellArg directory})
     for v in ${toString passEnv}; do
       if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
     done

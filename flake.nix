@@ -23,7 +23,7 @@
         # Hand-built holm (nix-holm core, no home-manager) — try:
         #   nix run .#demo-shell
         demo-shell =
-          (self.lib.mkHolm { inherit pkgs island; }) {
+          ((self.lib { inherit pkgs island; }).mkHolm) {
             name = "demo-shell";
             directory = "/tmp/holm-demo";
             packages = [ pkgs.ripgrep ];
@@ -58,7 +58,7 @@
 
       formatter = forAllSystems (pkgs: pkgs.nixpkgs-fmt);
 
-      lib = import ./nix/lib.nix; # { mkHolm, defaultPassEnv }
+      lib = import ./nix/lib.nix; # { pkgs, ... } -> { mkHolm, defaultPassEnv }
 
       homeManagerModules = rec {
         holm = import ./nix/home-manager-module.nix; # holm.holms.<name>

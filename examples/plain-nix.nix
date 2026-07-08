@@ -1,10 +1,10 @@
 # Core, plain Nix, no home-manager: nix-env -if ./examples/plain-nix.nix
 let
   pkgs = import <nixpkgs> { };
-  mkHolm = (import ../nix/lib.nix).mkHolm { inherit pkgs; };
+  holm = import ../nix/lib.nix { inherit pkgs; };
 in
 {
-  work-shell = mkHolm {
+  work-shell = holm.mkHolm {
     name = "work-shell";
     directory = "/home/alice/islands/work";
     packages = with pkgs; [ ripgrep jq git ];

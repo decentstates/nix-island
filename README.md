@@ -7,8 +7,9 @@ small island.
 
 Two libraries share this flake:
 
-- **`lib.mkHolm`** — core. A holm's contents are a list of `packages` (its
-  PATH) and a `holmFiles` derivation (linked into its home).
+- **`lib`** (`{ pkgs, ... } -> { mkHolm, defaultPassEnv }`) — core. A
+  holm's contents are a list of `packages` (its PATH) and a `holmFiles`
+  derivation (linked into its home).
 - **`homeManagerModules.holm`** — declare holms in your home-manager
   configuration (`holm.holms.<name>`). Each evaluates a nested HM home
   with the same home-manager (via `modulesPath`) and maps it onto the
@@ -58,7 +59,7 @@ holm.holms.work-shell = {
 Without:
 
 ```nix
-nix-holm.lib.mkHolm { inherit pkgs island; } {
+(nix-holm.lib { inherit pkgs; }).mkHolm {
   name = "plain-shell";
   directory = "/home/alice/islands/plain";
   packages = [ pkgs.ripgrep ];
@@ -79,10 +80,9 @@ Demo: `nix run .#demo-shell`. See `examples/`.
 |---|---|---|
 | `name` | — | executable and Island profile name |
 | `directory` | — | the holm's `$HOME`; absolute; created on launch; the only read/write hierarchy by default |
-| `packages` | `[ ]` | on PATH inside, next to the `shell` + coreutils baseline; their `etc/profile.d/*.sh` are sourced |
+| `packages` | `[ ]` | on PATH inside, next to the bash + coreutils baseline; their `etc/profile.d/*.sh` are sourced |
 | `holmFiles` | `null` | derivation linked (generation-aware) into the holm's `$HOME` |
 | `environment` | `{ }` | env vars exported inside |
-| `shell` | `pkgs.bashInteractive` | `$SHELL` inside; runs as a login shell with no args; CLI args run instead |
 | `passEnv` | terminal, locale, user vars | the only variables that cross from your session into the holm |
 | `readOnlyPaths` | `[ ]` | extra hierarchies readable inside |
 | `readWritePaths` | `[ ]` | extra hierarchies read/writable inside |
@@ -94,8 +94,8 @@ Demo: `nix run .#demo-shell`. See `examples/`.
 home-manager modules), and the mkHolm options `environment`, `passEnv`,
 `readOnlyPaths`, `readWritePaths`, `tcpPorts`. The nested
 `home.username`/`home.stateVersion` come from the outer home. Packages
-go in the holm's `home.packages`; `$SHELL` is the shell its modules
-enable (`programs.zsh`/`programs.fish`, else bash). `holm.island` sets
+go in the holm's `home.packages`; the login shell is bash unless the
+holm sets `home.sessionVariables.SHELL`. `holm.island` sets
 the Island package for all holms.
 
 ## How it works
@@ -121,8 +121,8 @@ launch:
    merged profile only; the profile's `etc/profile.d/*.sh` are sourced;
    `__NIXOS_SET_ENVIRONMENT_DONE=1` is exported so NixOS login/zsh
    shells do not reimport the system environment from
-   `/etc/set-environment`; `TMPDIR` is `$HOME/.tmp`; then `$SHELL -l` or
-   the given arguments run.
+   `/etc/set-environment`; `TMPDIR` is `$HOME/.tmp`; then `${SHELL:-bash} -l` or the given
+   arguments run (`SHELL` only exists if the holm's config sets it).
 
 The Landlock policy denies by default: read+execute on `/nix/store` only
 (this covers `/bin/sh` and `/usr/bin/env` shebangs — Landlock checks the
@@ -145,7 +145,7 @@ the island binary (embedded via `include_str!`, so `island create` and
 - Files within a profile compose: grants union, handled accesses
   intersect. Sibling files can widen access; to restrict, stack a second
   profile: `island run -p <name> -p strict -- ...`.
-- Only the holm's profile is on `PATH` (baseline: `shell` + coreutils).
+- Only the holm's profile is on `PATH` (baseline: bash + coreutils).
   System tools remain executable by absolute path under the store-wide
   grant.
 - Debug denials with `island run --log-audit -p <name> -- cmd`

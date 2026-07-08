@@ -2,14 +2,13 @@
 # configuration. Each holm.holms.<name> evaluates a nested HM home — via
 # this home-manager's own modulesPath, so no separate input — and
 # installs an executable of the same name. username/stateVersion come
-# from the outer home; packages and the shell from the holm's modules.
+# from the outer home; packages come from the holm's home.packages.
 { config, lib, pkgs, modulesPath, ... }:
 
 let
   cfg = config.holm;
-  holmLib = import ./lib.nix;
-
-  mkHolm = holmLib.mkHolm { inherit pkgs; island = cfg.island; };
+  holmLib = import ./lib.nix { inherit pkgs; island = cfg.island; };
+  inherit (holmLib) mkHolm;
 
   evalHome = h: import modulesPath {
     inherit pkgs;
@@ -22,15 +21,6 @@ let
     };
   };
 
-  # $SHELL = the shell the holm's own configuration enables.
-  # home.sessionVariables.SHELL (sourced later) still overrides.
-  shellOf = home:
-    let c = home.config;
-    in
-    if c.programs.zsh.enable then c.programs.zsh.package
-    else if c.programs.fish.enable then c.programs.fish.package
-    else pkgs.bashInteractive;
-
   mkWrapper = name: h:
     let home = evalHome h;
     in mkHolm {
@@ -38,7 +28,6 @@ let
       inherit (h)
         directory environment passEnv
         readOnlyPaths readWritePaths tcpPorts;
-      shell = shellOf home;
       packages = [ "${home.activationPackage}/home-path" ];
       holmFiles = "${home.activationPackage}/home-files";
     };

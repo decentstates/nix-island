@@ -29,11 +29,11 @@
 
     oss-shell = {
       tcpPorts = [ 443 22 ];
-      # programs.zsh.enable below also makes zsh this holm's $SHELL
       modules = [
-        ({ pkgs, ... }: {
+        ({ pkgs, lib, ... }: {
           home.packages = with pkgs; [ ripgrep tokei ];
           programs.zsh.enable = true;
+          home.sessionVariables.SHELL = lib.getExe pkgs.zsh;
           programs.git = {
             enable = true;
             userName = "alicehacks";
