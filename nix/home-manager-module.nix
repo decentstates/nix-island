@@ -1,24 +1,8 @@
-# home-manager module: declare holms inside your home-manager
-# configuration. Each holm.holms.<name> evaluates a nested HM home — via
-# this home-manager's own modulesPath, so no separate input — and
-# installs an executable of the same name. username/stateVersion come
-# from the outer home; packages come from the holm's home.packages.
 { config, lib, pkgs, modulesPath, ... }:
 
 let
   cfg = config.island;
-  islandLib = import ./lib.nix { inherit pkgs; island = cfg.package; };
-
-  evalHome = i: import modulesPath {
-    inherit pkgs;
-    configuration = {
-      imports = i.modules;
-      home = {
-        inherit (config.home) username stateVersion;
-        homeDirectory = i.workspaceRoot;
-      };
-    };
-  };
+  islandLib = import ./lib.nix { inherit pkgs; island = config.island.package; };
 
   islandModule = { name, ... }: {
     options = {
@@ -40,11 +24,11 @@ let
       modules = lib.mkOption {
         type = lib.types.listOf lib.types.deferredModule;
         default = [ ];
-        description = "The holm's home-manager modules.";
+        description = "The island's home-manager modules.";
       };
       passthroughEnv = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        default = islandLib.defaultPassEnv;
+        default = islandLib.defaultPassthroughEnv;
         description = "Variables to pass into the island environment";
       };
       readOnlyPaths = lib.mkOption {
@@ -85,41 +69,48 @@ in
     };
   };
 
-  config = lib.mkIf config.myModule.enable (
-    lib.mkMerge [
-      { home.packages = [ cfg.island ]; }
-      (lib.mapAttrsToList
-       (name: i: 
-          let
-            runner = islandLib.mkIslandRunner 
-              { name = i.runnerName; inherit (i) profileName passthroughEnv; };
-            profile = islandLib.mkIslandProfile
-              { inherit (i) name;
-                inherit (i) workspaceRoot passthroughEnv readOnlyPaths readWritePaths bindTcpPorts connectTcpPorts;
-              };
-            islandHomeManagerConfig = lib.homeManagerConfiguration (i: {
-              imports = i.modules;
-              home = {
-                inherit (config.home) username stateVersion;
-                # TODO: Check
-                # homeDirectory = i.workspaceRoot;
-              };
-            });
-          in
-            {
-              home.packages = [ runner ];
-              xdg.configFile."island/profiles/${i.profileName}" = {
-                source = profile;
-                recursive = true;
-              };
+  config = lib.mkIf config.island.enable (
+    let
+      cfg = config.island;
+      islandLib = import ./lib.nix { inherit pkgs; island = cfg.package; };
 
-              home.activation."island-nested-home-manager-activate-${i.profileName}" =
-                lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-                  run ${runner}/bin/${runner.name} \
-                    ${islandHomeManagerConfig.activationPackage}/activate
-                '';
-            }
-       )
-       cfg.islands)
-   ]);
+      mkRunner = i: islandLib.mkIslandRunner {
+        inherit (i) runnerName profileName passthroughEnv;
+      };
+      mkProfile = i: islandLib.mkIslandProfile {
+        inherit (i) profileName workspaceRoot passthroughEnv
+                    readOnlyPaths readWritePaths bindTcpPorts connectTcpPorts;
+      }; 
+      mkIslandHm = i: import modulesPath {
+        inherit pkgs;
+        check = true;
+        configuration = { ... }: {
+          imports = i.modules;
+          home = {
+            inherit (config.home) username stateVersion;
+            homeDirectory = i.workspaceRoot;
+          };
+        };
+      };
+    in
+    {
+      home.packages =
+        [ cfg.package ] ++ lib.mapAttrsToList (_: i: mkRunner i) cfg.islands;
+
+      xdg.configFile = lib.mapAttrs' (_: i:
+        lib.nameValuePair "island/profiles/${i.profileName}" {
+          source = mkProfile i;
+          recursive = true;
+        }) cfg.islands;
+
+      home.file = lib.mapAttrs' (_: i:
+        lib.nameValuePair "${i.workspaceRoot}/.keep" { text = ""; }) cfg.islands;
+
+      home.activation = lib.mapAttrs' (_: i:
+        lib.nameValuePair "island-nested-home-manager-activate-${i.profileName}"
+          (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+            run ${mkRunner i}/bin/${(mkRunner i).name} \
+              ${(mkIslandHm i).activationPackage}/activate
+          '')) cfg.islands;
+    });
 }

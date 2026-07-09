@@ -15,12 +15,12 @@
 assert lib.assertMsg (lib.hasPrefix "/" (toString workspaceRoot))
   "mkIsland(${profileName}): `workspaceRoot` must be an absolute path";
 
-assert builtins.match "^[A-Za-z0-9-_]+$" profileName != null;
+assert builtins.match "^[A-Za-z0-9_-]+$" profileName != null;
 
 let
   tomlFormat = pkgs.formats.toml { };
 
-  holmRules = {
+  nixIslandRules = {
     abi = 6;
     ruleset = [{
       handled_access_fs = [ "abi.all" ];
@@ -50,16 +50,17 @@ let
     ];
   };
 
-  islandProfile = pkgs.runCommand "holm-${profileName}-island-profile" { } ''
+  islandProfile = pkgs.runCommand "island-${profileName}-profile" { } ''
     mkdir -p "$out/landlock"
     cp ${tomlFormat.generate "profile.toml" {
       workspace = false;
       context = [{ when_beneath = toString workspaceRoot; }];
     }} "$out/profile.toml"
-    cp ${./island/island-default-base.toml} \
+    # TODO: Use the toml file from within the package.
+    cp ${./../island/island-default-base.toml} \
        "$out/landlock/island-default-base.toml"
-    cp ${tomlFormat.generate "holm.toml" holmRules} \
-       "$out/landlock/20-holm.toml"
+    cp ${tomlFormat.generate "island.toml" nixIslandRules} \
+       "$out/landlock/20-island.toml"
   '';
 in 
   islandProfile

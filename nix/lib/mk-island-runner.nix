@@ -3,20 +3,19 @@
 , island
 }:
 
-{ name
-, profileName ? null # defaults to name
+{ runnerName
+, profileName
 , passthroughEnv ? [ ] 
 }:
 
-assert builtins.match "^[A-Za-z0-9-_]+$" name != null;
 
-assert lib.assertMsg (lib.all (v: lib.match "^[A-Za-z_][A-Za-z0-9_]*$" v != null) passthroughEnv)
+assert builtins.match "^[A-Za-z0-9_-]+$" runnerName != null;
+
+assert lib.assertMsg (lib.all (v: builtins.match "^[A-Za-z_][A-Za-z0-9_]*$" v != null) passthroughEnv)
   "passthroughEnv contains an invalid environment variable name";
 
 let
-  profileName = profileName ? name;
-
-  innerRunner = pkgs.writeShellScript "holm-${name}-inner-runner" ''
+  innerRunner = pkgs.writeShellScript "island-${profileName}-inner-runner" ''
     # Testing the environment
     # TODO: Maybe disable XDG_CONFIG_DIRS/XDG_DATA_DIRS
     [[ -n "''${XDG_DATA_HOME:-}"       && "''${XDG_DATA_HOME:-}"   != "$HOME/.local/share" ]] \
@@ -35,7 +34,7 @@ let
   '';
 
   outerRunner = pkgs.writeShellApplication {
-    inherit name;
+    name = runnerName;
     runtimeInputs = [ island pkgs.coreutils ];
 
     text = ''
@@ -43,8 +42,8 @@ let
       for v in ${toString passthroughEnv}; do
         if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
       done
-      exec island run -p ${lib.escapeShellArg name} -- \
-        ${pkgs.coreutils}/bin/env -i "''${keep[@]}" ${outerRunner} "$@"
+      exec island run -p ${lib.escapeShellArg profileName} -- \
+        ${pkgs.coreutils}/bin/env -i "''${keep[@]}" ${innerRunner} "$@"
     '';
   };
 in outerRunner

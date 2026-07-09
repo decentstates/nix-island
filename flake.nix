@@ -11,7 +11,7 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, home-manager }:
-    flake-utils.eachDefaultSystem (system:
+    flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
       in

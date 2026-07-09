@@ -1,9 +1,9 @@
 { pkgs
 , lib ? pkgs.lib
 , island ? pkgs.callPackage ./island/island-package.nix { }
-} @ libArgs:
+}:
 
-rec {
+{
   defaultPassthroughEnv = [
     "TERM"
     "COLORTERM"
@@ -16,6 +16,6 @@ rec {
     "LOGNAME"
   ];
 
-  mkIslandRunner = import ./lib/mk-island-runner.nix libArgs;
-  mkIslandProfile = import ./lib/mk-island-profile.nix libArgs;
+  mkIslandRunner = import ./lib/mk-island-runner.nix { inherit pkgs lib island; };
+  mkIslandProfile = import ./lib/mk-island-profile.nix { inherit pkgs lib island; };
 }
