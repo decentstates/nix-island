@@ -1,68 +1,27 @@
 {
-  description = "holm — named, Landlock-sandboxed shells, each furnished by its own home-manager configuration";
+  description = "nix-island — island: data-based sandboxing for nix, with home-manager module provided.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, home-manager }:
-    let
-      systems = [ "x86_64-linux" "aarch64-linux" ];
-      forAllSystems = f: nixpkgs.lib.genAttrs systems
-        (system: f nixpkgs.legacyPackages.${system});
-    in
+  outputs = { self, nixpkgs, flake-utils, home-manager }:
+    flake-utils.eachDefaultSystem (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in
+      {
+        packages.island = pkgs.callPackage ./nix/island-package.nix { };
+        formatter = pkgs.nixpkgs-fmt;
+      }
+    ) //
     {
-      packages = forAllSystems (pkgs: rec {
-        island = pkgs.callPackage ./nix/island-package.nix { };
-        default = island;
-
-        # Hand-built holm (nix-holm core, no home-manager) — try:
-        #   nix run .#demo-shell
-        demo-shell =
-          ((self.lib { inherit pkgs island; }).mkHolm) {
-            name = "demo-shell";
-            directory = "/tmp/holm-demo";
-            packages = [ pkgs.ripgrep ];
-            holmFiles = pkgs.writeTextDir ".gitconfig" ''
-              [user]
-                name = Demo
-            '';
-            tcpPorts = [ 443 ];
-          };
-
-      });
-
-      checks = forAllSystems (pkgs: {
-        inherit (self.packages.${pkgs.system}) island demo-shell;
-        # building the outer home transitively builds the holm wrapper
-        hm-module = (home-manager.lib.homeManagerConfiguration {
-          inherit pkgs;
-          modules = [
-            self.homeManagerModules.holm
-            {
-              home = {
-                username = "demo";
-                homeDirectory = "/tmp/holm-demo-home";
-                stateVersion = "25.05";
-              };
-              holm.holms.demo-home-shell.modules =
-                [{ programs.bash.enable = true; }];
-            }
-          ];
-        }).activationPackage;
-      });
-
-      formatter = forAllSystems (pkgs: pkgs.nixpkgs-fmt);
-
-      lib = import ./nix/lib.nix; # { pkgs, ... } -> { mkHolm, defaultPassEnv }
-
-      homeManagerModules = rec {
-        holm = import ./nix/home-manager-module.nix; # holm.holms.<name>
-        default = holm;
-      };
+      lib = import ./nix/lib.nix;
+      homeManagerModules.default = import ./nix/home-manager-module.nix;
     };
 }

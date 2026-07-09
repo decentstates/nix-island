@@ -6,53 +6,46 @@
 { config, lib, pkgs, modulesPath, ... }:
 
 let
-  cfg = config.holm;
-  holmLib = import ./lib.nix { inherit pkgs; island = cfg.island; };
-  inherit (holmLib) mkHolm;
+  cfg = config.island;
+  islandLib = import ./lib.nix { inherit pkgs; island = cfg.package; };
 
-  evalHome = h: import modulesPath {
+  evalHome = i: import modulesPath {
     inherit pkgs;
     configuration = {
-      imports = h.modules;
+      imports = i.modules;
       home = {
         inherit (config.home) username stateVersion;
-        homeDirectory = h.directory;
+        homeDirectory = i.workspaceRoot;
       };
     };
   };
 
-  mkWrapper = name: h:
-    let home = evalHome h;
-    in mkHolm {
-      inherit name;
-      inherit (h)
-        directory environment passEnv
-        readOnlyPaths readWritePaths tcpPorts;
-      packages = [ "${home.activationPackage}/home-path" ];
-      holmFiles = "${home.activationPackage}/home-files";
-    };
-
-  holmModule = { name, ... }: {
+  islandModule = { name, ... }: {
     options = {
-      directory = lib.mkOption {
+      profileName = lib.mkOption {
+        type = lib.types.strMatching "[a-zA-Z0-9_-]+";
+        default =  "${name}";
+        description = "Island profile name";
+      };
+      runnerName = lib.mkOption {
+        type = lib.types.strMatching "[a-zA-Z0-9_-]+";
+        default =  "island-${name}";
+        description = "Island runner executable name";
+      };
+      workspaceRoot = lib.mkOption {
         type = lib.types.str;
-        default = "${config.home.homeDirectory}/holms/${name}";
-        description = "The holm's $HOME; absolute.";
+        default = "${config.home.homeDirectory}/islands/${name}";
+        description = "The island workspace root.";
       };
       modules = lib.mkOption {
         type = lib.types.listOf lib.types.deferredModule;
         default = [ ];
         description = "The holm's home-manager modules.";
       };
-      environment = lib.mkOption {
-        type = lib.types.attrsOf lib.types.str;
-        default = { };
-        description = "Env vars exported inside.";
-      };
-      passEnv = lib.mkOption {
+      passthroughEnv = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        default = holmLib.defaultPassEnv;
-        description = "Sole variables crossing from the session into the holm.";
+        default = islandLib.defaultPassEnv;
+        description = "Variables to pass into the island environment";
       };
       readOnlyPaths = lib.mkOption {
         type = lib.types.listOf lib.types.str;
@@ -64,39 +57,69 @@ let
         default = [ ];
         description = "Extra hierarchies read/writable inside.";
       };
-      tcpPorts = lib.mkOption {
+      bindTcpPorts = lib.mkOption {
         type = lib.types.listOf lib.types.port;
         default = [ ];
-        description = "TCP ports usable inside (connect + bind); empty = no TCP.";
+        description = "TCP ports binable inside.";
+      };
+      connectTcpPorts = lib.mkOption {
+        type = lib.types.listOf lib.types.port;
+        default = [ ];
+        description = "TCP ports connectable to inside.";
       };
     };
   };
 in
 {
-  options.holm = {
-    island = lib.mkOption {
+  options.island = {
+    enable = lib.mkEnableOption "Enable island.";
+    package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ./island-package.nix { };
-      defaultText = lib.literalExpression "nix-holm's island package";
-      description = "Island package used by all holms.";
+      default = pkgs.callPackage ./island/island-package.nix { };
+      description = "Island package.";
     };
-    holms = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.submodule holmModule);
+    islands = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule islandModule);
       default = { };
-      description = "Sandboxed holms; each attribute installs an executable of the same name.";
+      description = "Island sandbox profiles";
     };
   };
 
-  config =
-    let wrappers = lib.mapAttrsToList mkWrapper cfg.holms;
-    in lib.mkIf (cfg.holms != { }) {
-      home.packages = [ cfg.island ] ++ wrappers;
+  config = lib.mkIf config.myModule.enable (
+    lib.mkMerge [
+      { home.packages = [ cfg.island ]; }
+      (lib.mapAttrsToList
+       (name: i: 
+          let
+            runner = islandLib.mkIslandRunner 
+              { name = i.runnerName; inherit (i) profileName passthroughEnv; };
+            profile = islandLib.mkIslandProfile
+              { inherit (i) name;
+                inherit (i) workspaceRoot passthroughEnv readOnlyPaths readWritePaths bindTcpPorts connectTcpPorts;
+              };
+            islandHomeManagerConfig = lib.homeManagerConfiguration (i: {
+              imports = i.modules;
+              home = {
+                inherit (config.home) username stateVersion;
+                # TODO: Check
+                # homeDirectory = i.workspaceRoot;
+              };
+            });
+          in
+            {
+              home.packages = [ runner ];
+              xdg.configFile."island/profiles/${i.profileName}" = {
+                source = profile;
+                recursive = true;
+              };
 
-      # Profiles are in place at switch time, so `island run -p <name>`
-      # works without launching a wrapper first.
-      home.activation.holmProfiles = lib.hm.dag.entryAfter [ "writeBoundary" ]
-        (lib.concatMapStrings
-          (w: "run ${w.installProfile}/bin/${w.installProfile.name}\n")
-          wrappers);
-    };
+              home.activation."island-nested-home-manager-activate-${i.profileName}" =
+                lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+                  run ${runner}/bin/${runner.name} \
+                    ${islandHomeManagerConfig.activationPackage}/activate
+                '';
+            }
+       )
+       cfg.islands)
+   ]);
 }

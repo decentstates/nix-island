@@ -1,12 +1,10 @@
-# Common import surface: the flake, the home-manager module, and plain
-# Nix all take mkHolm from here.
 { pkgs
 , lib ? pkgs.lib
-, island ? pkgs.callPackage ./island-package.nix { }
-}:
+, island ? pkgs.callPackage ./island/island-package.nix { }
+} @ libArgs:
 
 rec {
-  defaultPassEnv = [
+  defaultPassthroughEnv = [
     "TERM"
     "COLORTERM"
     "LANG"
@@ -18,7 +16,6 @@ rec {
     "LOGNAME"
   ];
 
-  mkHolm = args:
-    import ./mk-holm.nix { inherit pkgs lib island; }
-      ({ passEnv = defaultPassEnv; } // args);
+  mkIslandRunner = import ./lib/mk-island-runner.nix libArgs;
+  mkIslandProfile = import ./lib/mk-island-profile.nix libArgs;
 }
