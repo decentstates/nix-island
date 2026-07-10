@@ -1,4 +1,4 @@
-{ config, lib, pkgs, modulesPath, ... }:
+{ config, inputs, lib, pkgs, modulesPath, ... }:
 
 let
   cfg = config.island;
@@ -33,7 +33,8 @@ let
       };
       readOnlyPaths = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        default = [ ];
+        default = [ 
+        ];
         description = "Extra hierarchies readable inside.";
       };
       readWritePaths = lib.mkOption {
@@ -78,14 +79,28 @@ in
         inherit (i) runnerName profileName passthroughEnv;
       };
       mkProfile = i: islandLib.mkIslandProfile {
+
         inherit (i) profileName passthroughEnv
-                    readOnlyPaths readWritePaths bindTcpPorts connectTcpPorts;
+                    bindTcpPorts connectTcpPorts;
+          # TODO: Determine these programatically:
+        readOnlyPaths = i.readOnlyPaths ++ [
+            "${config.home.homeDirectory}/.local/share/island-cache-profiles/${i.profileName}"
+            "${config.home.homeDirectory}/.config/island-cache-profiles/${i.profileName}"
+        ];
+        readWritePaths = i.readWritePaths ++ [
+            "${config.home.homeDirectory}/.local/state/island-cache-profiles/${i.profileName}"
+            "${config.home.homeDirectory}/.cache/island-cache-profiles/${i.profileName}"
+        ];
         # Requires an absolute root
         workspaceRoot = "${config.home.homeDirectory}/${i.workspaceRoot}";
       }; 
       mkIslandHm = i: import modulesPath {
         inherit pkgs;
         check = true;
+        # TODO: make this an option
+        extraSpecialArgs = {
+          inherit inputs;
+        };
         configuration = { ... }: {
           imports = i.modules;
           home = {
@@ -95,10 +110,10 @@ in
           xdg = {
             enable = true;
             # TODO: Determine these programatically:
-            dataHome = "${config.home.homeDirectory}/.local/share/island-cache-profiles/${i.profileName}";
-            configHome = "${config.home.homeDirectory}/.config/island-cache-profiles/${i.profileName}";
-            stateHome = "${config.home.homeDirectory}/.local/state/island-cache-profiles/${i.profileName}";
-            cacheHome = "${config.home.homeDirectory}/.cache/island-cache-profiles/${i.profileName}";
+            dataHome = "/.local/share/island-data-profiles/${i.profileName}";
+            configHome = "/.config/island-config-profiles/${i.profileName}";
+            stateHome = "/.local/state/island-state-profiles/${i.profileName}";
+            cacheHome = "/.cache/island-cache-profiles/${i.profileName}";
           };
         };
       };
