@@ -89,7 +89,16 @@ in
         configuration = { ... }: {
           imports = i.modules;
           home = {
-            inherit (config.home) username stateVersion homeDirectory;
+            inherit (config.home) username stateVersion;
+            homeDirectory = "${config.home.homeDirectory}/${i.workspaceRoot}";
+          };
+          xdg = {
+            enable = true;
+            # TODO: Determine these programatically:
+            dataHome = "${config.home.homeDirectory}/.local/share/island-cache-profiles/${i.profileName}";
+            configHome = "${config.home.homeDirectory}/.config/island-cache-profiles/${i.profileName}";
+            stateHome = "${config.home.homeDirectory}/.local/state/island-cache-profiles/${i.profileName}";
+            cacheHome = "${config.home.homeDirectory}/.cache/island-cache-profiles/${i.profileName}";
           };
         };
       };
@@ -113,6 +122,7 @@ in
           let 
             activate = pkgs.writeShellScript "activate" ''
             export PATH="$PATH:${pkgs.nix}/bin"
+            export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
             exec ${(mkIslandHm i).activationPackage}/activate
             '';
           in
