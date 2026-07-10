@@ -18,7 +18,7 @@ let
       };
       workspaceRoot = lib.mkOption {
         type = lib.types.str;
-        default = "${config.home.homeDirectory}/islands/${name}";
+        default = "islands/${name}";
         description = "The island workspace root.";
       };
       modules = lib.mkOption {
@@ -78,8 +78,10 @@ in
         inherit (i) runnerName profileName passthroughEnv;
       };
       mkProfile = i: islandLib.mkIslandProfile {
-        inherit (i) profileName workspaceRoot passthroughEnv
+        inherit (i) profileName passthroughEnv
                     readOnlyPaths readWritePaths bindTcpPorts connectTcpPorts;
+        # Requires an absolute root
+        workspaceRoot = "${config.home.homeDirectory}/${i.workspaceRoot}";
       }; 
       mkIslandHm = i: import modulesPath {
         inherit pkgs;
@@ -87,8 +89,7 @@ in
         configuration = { ... }: {
           imports = i.modules;
           home = {
-            inherit (config.home) username stateVersion;
-            homeDirectory = i.workspaceRoot;
+            inherit (config.home) username stateVersion homeDirectory;
           };
         };
       };
@@ -108,9 +109,16 @@ in
 
       home.activation = lib.mapAttrs' (_: i:
         lib.nameValuePair "island-nested-home-manager-activate-${i.profileName}"
-          (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
+          let 
+            activate = pkgs.writeShellScript "activate" ''
+            export PATH="$PATH:${pkgs.nix}/bin"
+            exec ${(mkIslandHm i).activationPackage}/activate
+            '';
+          in
+          ''
             run ${mkRunner i}/bin/${(mkRunner i).name} \
-              ${(mkIslandHm i).activationPackage}/activate
-          '')) cfg.islands;
+              ${activate}
+          ''))) cfg.islands;
     });
 }

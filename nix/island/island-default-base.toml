@@ -17,6 +17,8 @@ scoped = ["abi.all"]
 [[path_beneath]]
 allowed_access = ["abi.read_execute"]
 parent = [
+    "/bin",
+    "/usr/bin",
     "/nix/store",
 ]
 

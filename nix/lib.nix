@@ -14,6 +14,7 @@
     "LOCALE_ARCHIVE"
     "USER"
     "LOGNAME"
+    "HOME"
   ];
 
   mkIslandRunner = import ./lib/mk-island-runner.nix { inherit pkgs lib island; };

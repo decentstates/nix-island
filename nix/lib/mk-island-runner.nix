@@ -18,6 +18,7 @@ let
   innerRunner = pkgs.writeShellScript "island-${profileName}-inner-runner" ''
     # Testing the environment
     # TODO: Maybe disable XDG_CONFIG_DIRS/XDG_DATA_DIRS
+    /usr/bin/env
     [[ -n "''${XDG_DATA_HOME:-}"       && "''${XDG_DATA_HOME:-}"   != "$HOME/.local/share" ]] \
     && [[ -n "''${XDG_CONFIG_HOME:-}"  && "''${XDG_CONFIG_HOME:-}" != "$HOME/.config" ]] \
     && [[ -n "''${XDG_STATE_HOME:-}"   && "''${XDG_STATE_HOME:-}"  != "$HOME/.local/state" ]] \
@@ -33,17 +34,29 @@ let
     fi
   '';
 
-  outerRunner = pkgs.writeShellApplication {
-    name = runnerName;
-    runtimeInputs = [ island pkgs.coreutils ];
+  passthroughEnv' = passthroughEnv ++ [
+    "XDG_DATA_HOME"
+    "XDG_CONFIG_HOME"
+    "XDG_STATE_HOME"
+    "XDG_CACHE_HOME"
+    "XDG_RUNTIME_DIR"
+    "TMPDIR"
+    "ISLAND_CONTEXT_BENEATH"
+    ];
 
-    text = ''
+  envFilterer = pkgs.writeShellScript "island-${profileName}-shell-filterer" ''
       keep=()
-      for v in ${toString passthroughEnv}; do
+      for v in ${toString passthroughEnv'}; do
         if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
       done
-      exec island run -p ${lib.escapeShellArg profileName} -- \
-        ${pkgs.coreutils}/bin/env -i "''${keep[@]}" ${innerRunner} "$@"
+      ${pkgs.coreutils}/bin/env -i "''${keep[@]}"  "$@"
+  '';
+
+  outerRunner = pkgs.writeShellApplication {
+    name = runnerName;
+    text = ''
+      exec ${island}/bin/island run -p ${lib.escapeShellArg profileName} -- \
+        ${envFilterer} ${innerRunner} "$@"
     '';
   };
 in outerRunner
