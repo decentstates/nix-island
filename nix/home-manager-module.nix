@@ -123,8 +123,6 @@ in
             activate = pkgs.writeShellScript "activate" ''
             export PATH="$PATH:${pkgs.nix}/bin"
             export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
-            # HACK: Island requires this variable but it is only present if the user is logged in.
-            export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
             exec ${(mkIslandHm i).activationPackage}/activate
             '';
           in
@@ -137,6 +135,9 @@ in
                 warnEcho "nix-island:    rm ~/.nix-profile"
             fi
 
+            # HACK: Island requires this variable but it is only present if the user is logged in.
+            export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/tmp/run/user/$(id -u)}"
+            mkdir -p $XDG_RUNTIME_DIR
             run ${mkRunner i}/bin/${(mkRunner i).name} \
               ${activate}
           ''))) cfg.islands;
