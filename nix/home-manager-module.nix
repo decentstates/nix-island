@@ -123,10 +123,20 @@ in
             activate = pkgs.writeShellScript "activate" ''
             export PATH="$PATH:${pkgs.nix}/bin"
             export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
+            # HACK: Island requires this variable but it is only present if the user is logged in.
+            export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
             exec ${(mkIslandHm i).activationPackage}/activate
             '';
           in
           ''
+            if [ -e "$HOME/.nix-profile" ]; then
+                warnEcho "nix-island: WARNING: ~/.nix-profile exists."
+                warnEcho "nix-island: Home-manager now stores profiles under XDG dirs allowing isolation."
+                warnEcho "nix-island: You still have the legacy profile link, this will prevent environment isolation."
+                warnEcho "nix-island: It should be safe to delete it AFAIK:"
+                warnEcho "nix-island:    rm ~/.nix-profile"
+            fi
+
             run ${mkRunner i}/bin/${(mkRunner i).name} \
               ${activate}
           ''))) cfg.islands;
