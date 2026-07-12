@@ -182,10 +182,7 @@ in
           (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
           let 
             activate = pkgs.writeShellScript "activate" ''
-            set -euo pipefail
-
             export PATH="$PATH:${pkgs.nix}/bin"
-            export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
             exec ${(mkIslandHm i).activationPackage}/activate
             '';
           in
@@ -204,8 +201,7 @@ in
             export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/tmp/run/user/$(id -u)}"
             mkdir -p $XDG_RUNTIME_DIR
 
-            run ${mkUnsharedIsland i}/bin/${(mkUnsharedIsland i).name} \
-              ${(mkIslandHm i).activationPackage}/activate
+            run ${mkUnsharedIsland i}/bin/${(mkUnsharedIsland i).name} ${activate}
           ''))) cfg.islands;
     });
 }
