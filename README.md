@@ -28,6 +28,7 @@ is this similar to flatpack:
 
 ### notes:
 - nix.settings.use-xdg-base-directories should be set to true to allow isolated home-manager environments to be set up.
+- island home-manager modules recieve the same extraSpecialArgs as the parent home-manager
 
 ### todo:
 - [ ] home-manager-module: during activation find some way to indicate that the configuration is nested, maybe filter the output of the activation script via piping to another application or function.

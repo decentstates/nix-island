@@ -75,6 +75,12 @@ in
       cfg = config.island;
       islandLib = import ./lib.nix { inherit pkgs; island = cfg.package; };
 
+      # TODO: Determine these programatically?
+      xdgDataHome = i: ".local/share/island-data-profiles/${i.profileName}";
+      xdgConfigHome = i: ".config/island-config-profiles/${i.profileName}";
+      xdgStateHome = i: ".local/state/island-state-profiles/${i.profileName}";
+      xdgCacheHome = i: ".cache/island-cache-profiles/${i.profileName}";
+
       mkRunner = i: islandLib.mkIslandRunner {
         inherit (i) runnerName profileName passthroughEnv;
       };
@@ -82,45 +88,78 @@ in
 
         inherit (i) profileName passthroughEnv
                     bindTcpPorts connectTcpPorts;
-          # TODO: Determine these programatically:
-        readOnlyPaths = i.readOnlyPaths ++ [
-            "${config.home.homeDirectory}/.local/share/island-cache-profiles/${i.profileName}"
-            "${config.home.homeDirectory}/.config/island-cache-profiles/${i.profileName}"
-        ];
         readWritePaths = i.readWritePaths ++ [
-            "${config.home.homeDirectory}/.local/state/island-cache-profiles/${i.profileName}"
-            "${config.home.homeDirectory}/.cache/island-cache-profiles/${i.profileName}"
+            "${config.home.homeDirectory}/${xdgDataHome i}"
+            "${config.home.homeDirectory}/${xdgConfigHome i}"
+            "${config.home.homeDirectory}/${xdgStateHome i}"
+            "${config.home.homeDirectory}/${xdgCacheHome i}"
         ];
-        # Requires an absolute root
         workspaceRoot = "${config.home.homeDirectory}/${i.workspaceRoot}";
       }; 
       mkIslandHm = i: import modulesPath {
         inherit pkgs;
         check = true;
-        # TODO: make this an option
+        # TODO: inherit this if possible from the outer home-manager.
         extraSpecialArgs = {
           inherit inputs;
         };
         configuration = { ... }: {
           imports = i.modules;
           home = {
-            inherit (config.home) username stateVersion;
-            homeDirectory = "${config.home.homeDirectory}/${i.workspaceRoot}";
+            inherit (config.home) username stateVersion homeDirectory;
           };
           xdg = {
             enable = true;
-            # TODO: Determine these programatically:
-            dataHome = "/.local/share/island-data-profiles/${i.profileName}";
-            configHome = "/.config/island-config-profiles/${i.profileName}";
-            stateHome = "/.local/state/island-state-profiles/${i.profileName}";
-            cacheHome = "/.cache/island-cache-profiles/${i.profileName}";
+            dataHome = "${config.home.homeDirectory}/${xdgDataHome i}";
+            configHome = "${config.home.homeDirectory}/${xdgConfigHome i}";
+            stateHome = "${config.home.homeDirectory}/${xdgStateHome i}";
+            cacheHome = "${config.home.homeDirectory}/${xdgCacheHome i}";
           };
         };
+      };
+
+      unshareMounter = i: pkgs.writeShellScript "unshare-mounter-${i.profileName}" ''
+        set -euo pipefail
+
+        WORKSPACE_DIR="${config.home.homeDirectory}/${i.workspaceRoot}"
+
+        for D in "${xdgDataHome i}" "${xdgConfigHome i}" "${xdgStateHome i}" "${xdgCacheHome i}"; do
+          if [[ "$D" != "$HOME"/* ]]; then
+            continue
+          fi
+          TARGET="$WORKSPACE_DIR/''${d#"$HOME"/}"
+          mkdir -p "$TARGET"
+          ${pkgs.util-linux}/bin/mount --rbind "$D" "$TARGET"
+        done
+
+        ${pkgs.util-linux}/bin/mount --rbind "$WORKSPACE_DIR" "$HOME"
+
+        cd "$HOME"
+        exec "$@"
+      '';
+
+      # TODO: Check on propagation setting
+      # TODO: Mount /proc
+      mkUnsharedWorkspace = i: pkgs.writeShellScript "unshared-workspace-${i.profileName}"  ''
+        exec ${pkgs.util-linux}/bin/unshare --user --map-current-user \
+                     --mount --propagation private \
+                     -- ${unshareMounter i} "$@"
+      '';
+
+
+      mkUnsharedIsland = i: pkgs.writeShellApplication  {
+        name = "unshared-island-${i.profileName}";
+        text = ''
+          exec ${mkUnsharedWorkspace i} ${mkRunner i}/bin/${(mkRunner i).name} "$@"
+        '';
       };
     in
     {
       home.packages =
-        [ cfg.package ] ++ lib.mapAttrsToList (_: i: mkRunner i) cfg.islands;
+        [ cfg.package ] 
+          ++ lib.mapAttrsToList (_: i: mkRunner i) cfg.islands
+          ++ lib.mapAttrsToList (_: i: mkUnsharedIsland i) cfg.islands;
+
 
       xdg.configFile = lib.mapAttrs' (_: i:
         lib.nameValuePair "island/profiles/${i.profileName}" {
@@ -136,12 +175,16 @@ in
           (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
           let 
             activate = pkgs.writeShellScript "activate" ''
+            set -euo pipefail
+
             export PATH="$PATH:${pkgs.nix}/bin"
             export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
             exec ${(mkIslandHm i).activationPackage}/activate
             '';
           in
           ''
+            set -euo pipefail
+
             if [ -e "$HOME/.nix-profile" ]; then
                 warnEcho "nix-island: WARNING: ~/.nix-profile exists."
                 warnEcho "nix-island: Home-manager now stores profiles under XDG dirs allowing isolation."
@@ -153,8 +196,9 @@ in
             # HACK: Island requires this variable but it is only present if the user is logged in.
             export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/tmp/run/user/$(id -u)}"
             mkdir -p $XDG_RUNTIME_DIR
-            run ${mkRunner i}/bin/${(mkRunner i).name} \
-              ${activate}
+
+            run ${mkUnsharedIsland i}/bin/${(mkUnsharedIsland i).name} \
+              ${(mkIslandHm i).activationPackage}/activate
           ''))) cfg.islands;
     });
 }

@@ -36,7 +36,7 @@ let
         parent = readWritePaths;
     })
     ++
-    (lib.optional (readWritePaths != [ ]) {
+    (lib.optional (readOnlyPaths != [ ]) {
         allowed_access = [ "abi.read_execute" ];
         parent = readOnlyPaths;
     });

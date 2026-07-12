@@ -10,7 +10,8 @@ abi = 6
 # Deny every handled access by default.
 [[ruleset]]
 handled_access_fs = ["abi.all"]
-handled_access_net = ["abi.all"]
+# Allow dynamic
+# handled_access_net = ["abi.all"]
 scoped = ["abi.all"]
 
 # System executables.
@@ -42,6 +43,5 @@ allowed_access = [
 ]
 parent = [
     "/etc",
-    "/proc/self",
-    "/proc/cpuinfo",
+    "/proc",
 ]

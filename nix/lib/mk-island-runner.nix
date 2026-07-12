@@ -18,7 +18,6 @@ let
   innerRunner = pkgs.writeShellScript "island-${profileName}-inner-runner" ''
     # Testing the environment
     # TODO: Maybe disable XDG_CONFIG_DIRS/XDG_DATA_DIRS
-    /usr/bin/env
     [[ -n "''${XDG_DATA_HOME:-}"       && "''${XDG_DATA_HOME:-}"   != "$HOME/.local/share" ]] \
     && [[ -n "''${XDG_CONFIG_HOME:-}"  && "''${XDG_CONFIG_HOME:-}" != "$HOME/.config" ]] \
     && [[ -n "''${XDG_STATE_HOME:-}"   && "''${XDG_STATE_HOME:-}"  != "$HOME/.local/state" ]] \
