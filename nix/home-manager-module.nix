@@ -124,6 +124,7 @@ in
         WORKSPACE_DIR="${config.home.homeDirectory}/${i.workspaceRoot}"
 
         for D in \
+          "${config.xdg.configHome}/island/profiles" \
           "${config.home.homeDirectory}/${xdgDataHome i}" \
           "${config.home.homeDirectory}/${xdgConfigHome i}" \
           "${config.home.homeDirectory}/${xdgStateHome i}" \
