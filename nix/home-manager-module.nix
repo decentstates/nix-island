@@ -75,12 +75,6 @@ in
       cfg = config.island;
       islandLib = import ./lib.nix { inherit pkgs; island = cfg.package; };
 
-      # TODO: Determine these programatically?
-      xdgDataHome = i: ".local/share/island-data-profiles/${i.profileName}";
-      xdgConfigHome = i: ".config/island-config-profiles/${i.profileName}";
-      xdgStateHome = i: ".local/state/island-state-profiles/${i.profileName}";
-      xdgCacheHome = i: ".cache/island-cache-profiles/${i.profileName}";
-
       mkRunner = i: islandLib.mkIslandRunner {
         inherit (i) runnerName profileName passthroughEnv;
       };
@@ -89,10 +83,7 @@ in
         inherit (i) profileName passthroughEnv
                     bindTcpPorts connectTcpPorts;
         readWritePaths = i.readWritePaths ++ [
-            "${config.home.homeDirectory}/${xdgDataHome i}"
-            "${config.home.homeDirectory}/${xdgConfigHome i}"
-            "${config.home.homeDirectory}/${xdgStateHome i}"
-            "${config.home.homeDirectory}/${xdgCacheHome i}"
+            "${config.home.homeDirectory}/${i.workspaceRoot}"
         ];
         workspaceRoot = "${config.home.homeDirectory}/${i.workspaceRoot}";
       }; 
@@ -103,17 +94,19 @@ in
         extraSpecialArgs = {
           inherit inputs;
         };
-        configuration = { ... }: {
+        configuration = innerHomeManagerArgs:
+        let
+          innerConfig = innerHomeManagerArgs.config;
+        in
+        {
           imports = i.modules;
           home = {
-            inherit (config.home) username stateVersion homeDirectory;
+            inherit (config.home) username stateVersion;
+            homeDirectory = "${config.home.homeDirectory}/${i.workspaceRoot}";
+            sessionVariables.HOME = innerConfig.home.homeDirectory;
           };
           xdg = {
             enable = true;
-            dataHome = "${config.home.homeDirectory}/${xdgDataHome i}";
-            configHome = "${config.home.homeDirectory}/${xdgConfigHome i}";
-            stateHome = "${config.home.homeDirectory}/${xdgStateHome i}";
-            cacheHome = "${config.home.homeDirectory}/${xdgCacheHome i}";
           };
         };
       };
@@ -124,11 +117,7 @@ in
         WORKSPACE_DIR="${config.home.homeDirectory}/${i.workspaceRoot}"
 
         for D in \
-          "${config.xdg.configHome}/island/profiles" \
-          "${config.home.homeDirectory}/${xdgDataHome i}" \
-          "${config.home.homeDirectory}/${xdgConfigHome i}" \
-          "${config.home.homeDirectory}/${xdgStateHome i}" \
-          "${config.home.homeDirectory}/${xdgCacheHome i}"; do
+          "${config.xdg.configHome}/island/profiles"; do \
           if [[ "$D" != "$HOME"/* ]]; then
             continue
           fi
@@ -155,7 +144,7 @@ in
 
 
       mkUnsharedIsland = i: pkgs.writeShellApplication  {
-        name = "unshared-island-${i.profileName}";
+        name = "unshared-${(mkRunner i).name}";
         text = ''
           exec ${mkUnsharedWorkspace i} ${mkRunner i}/bin/${(mkRunner i).name} "$@"
         '';
@@ -164,8 +153,7 @@ in
     {
       home.packages =
         [ cfg.package ] 
-          ++ lib.mapAttrsToList (_: i: mkRunner i) cfg.islands
-          ++ lib.mapAttrsToList (_: i: mkUnsharedIsland i) cfg.islands;
+          ++ lib.mapAttrsToList (_: i: mkRunner i) cfg.islands;
 
 
       xdg.configFile = lib.mapAttrs' (_: i:
@@ -183,6 +171,7 @@ in
           let 
             activate = pkgs.writeShellScript "activate" ''
             export PATH="$PATH:${pkgs.nix}/bin"
+            export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
             exec ${(mkIslandHm i).activationPackage}/activate
             '';
           in
@@ -201,7 +190,7 @@ in
             export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/tmp/run/user/$(id -u)}"
             mkdir -p $XDG_RUNTIME_DIR
 
-            run ${mkUnsharedIsland i}/bin/${(mkUnsharedIsland i).name} ${activate}
+            run ${mkRunner i}/bin/${(mkRunner i).name}  ${activate}
           ''))) cfg.islands;
     });
 }
