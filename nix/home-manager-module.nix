@@ -123,11 +123,15 @@ in
 
         WORKSPACE_DIR="${config.home.homeDirectory}/${i.workspaceRoot}"
 
-        for D in "${xdgDataHome i}" "${xdgConfigHome i}" "${xdgStateHome i}" "${xdgCacheHome i}"; do
+        for D in \
+          "${config.home.homeDirectory}/${xdgDataHome i}" \
+          "${config.home.homeDirectory}/${xdgConfigHome i}" \
+          "${config.home.homeDirectory}/${xdgStateHome i}" \
+          "${config.home.homeDirectory}/${xdgCacheHome i}"; do
           if [[ "$D" != "$HOME"/* ]]; then
             continue
           fi
-          TARGET="$WORKSPACE_DIR/''${d#"$HOME"/}"
+          TARGET="$WORKSPACE_DIR/''${D#"$HOME"/}"
           mkdir -p "$TARGET"
           ${pkgs.util-linux}/bin/mount --rbind "$D" "$TARGET"
         done
@@ -135,14 +139,16 @@ in
         ${pkgs.util-linux}/bin/mount --rbind "$WORKSPACE_DIR" "$HOME"
 
         cd "$HOME"
-        exec "$@"
+        exec ${pkgs.util-linux}/bin/setpriv \
+          --inh-caps=-all --ambient-caps=-all --bounding-set=-all \
+          -- "$@"
       '';
 
       # TODO: Check on propagation setting
       # TODO: Mount /proc
       mkUnsharedWorkspace = i: pkgs.writeShellScript "unshared-workspace-${i.profileName}"  ''
         exec ${pkgs.util-linux}/bin/unshare --user --map-current-user \
-                     --mount --propagation private \
+                     --mount --propagation private --keep-caps \
                      -- ${unshareMounter i} "$@"
       '';
 
