@@ -55,7 +55,7 @@ let
   islandProfile = pkgs.runCommand "island-${profileName}-profile" { } ''
     mkdir -p "$out/landlock"
     cp ${tomlFormat.generate "profile.toml" {
-      inherit workspace;
+      workspace = false;
       context = [];
     }} "$out/profile.toml"
     # TODO: Use the toml file from within the package.

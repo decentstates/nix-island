@@ -87,7 +87,7 @@ in
             # This enables everything else to work
             export XDG_STATE_HOME="${config.home.homeDirectory}/${i.workspaceRoot}/.local/state"
 
-            # Which first?
+            # TODO: Which first?
             . ${(mkIslandHm i).activationPackage}/home-path/etc/profile.d/hm-session-vars.sh
             . /etc/profile
 
@@ -153,7 +153,6 @@ in
             };
           };
       };
-
     in
     {
       home.packages =
