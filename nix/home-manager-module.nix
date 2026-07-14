@@ -1,4 +1,4 @@
-{ config, inputs, lib, pkgs, modulesPath, ... }:
+hmArgs@{ config, inputs, lib, pkgs, modulesPath, ... }:
 
 let
   cfg = config.island;
@@ -75,80 +75,85 @@ in
       cfg = config.island;
       islandLib = import ./lib.nix { inherit pkgs; island = cfg.package; };
 
-      mkRunner = i: islandLib.mkIslandRunner {
-        inherit (i) runnerName profileName passthroughEnv;
-      };
-      mkProfile = i: islandLib.mkIslandProfile {
+      tmpDir = i: "/tmp/island-${config.home.username}-${i.profileName}";
 
+      mkRunner = i:
+        let 
+          inner = pkgs.writeShellScript "activate" ''
+            set -e
+
+            export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
+            export TMPDIR="${tmpDir i}"
+            # This enables everything else to work
+            export XDG_STATE_HOME="${config.home.homeDirectory}/${i.workspaceRoot}/.local/state"
+
+            # Which first?
+            . ${(mkIslandHm i).activationPackage}/home-path/etc/profile.d/hm-session-vars.sh
+            . /etc/profile
+
+            [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
+          '';
+          outer =
+            islandLib.mkIslandRunner {
+              inherit (i) runnerName profileName passthroughEnv;
+            };
+        in
+        pkgs.writeShellApplication {
+          name = outer.name;
+          text = ''
+          # HACK: This won't work for nested islands... maybe just don't support:
+          # TODO: Block nested islands.
+          mkdir -p ${tmpDir i}
+
+          exec ${outer}/bin/${outer.name} ${inner} "$@"
+          '';
+        };
+      
+      mkProfile = i: islandLib.mkIslandProfile {
         inherit (i) profileName passthroughEnv
                     bindTcpPorts connectTcpPorts;
         readWritePaths = i.readWritePaths ++ [
             "${config.home.homeDirectory}/${i.workspaceRoot}"
+            (tmpDir i)
         ];
-        workspaceRoot = "${config.home.homeDirectory}/${i.workspaceRoot}";
       }; 
       mkIslandHm = i: import modulesPath {
         inherit pkgs;
         check = true;
-        # TODO: inherit this if possible from the outer home-manager.
-        extraSpecialArgs = {
-          inherit inputs;
-        };
+        # HACK: But should be stable as HM adding extra args is a breaking
+        #       change to their API, with nix used namespaces more...
+        extraSpecialArgs = builtins.removeAttrs hmArgs.specialArgs [                                
+         "modulesPath" "lib" "osConfig" "osClass"
+        ];
         configuration = innerHomeManagerArgs:
-        let
-          innerConfig = innerHomeManagerArgs.config;
-        in
-        {
-          imports = i.modules;
-          home = {
-            inherit (config.home) username stateVersion;
-            homeDirectory = "${config.home.homeDirectory}/${i.workspaceRoot}";
-            sessionVariables.HOME = innerConfig.home.homeDirectory;
+          let
+            innerConfig = innerHomeManagerArgs.config;
+          in
+          {
+            imports = i.modules;
+            home = {
+              inherit (config.home) username stateVersion;
+              homeDirectory = "${config.home.homeDirectory}/${i.workspaceRoot}";
+              sessionVariables = {
+                HOME = innerConfig.home.homeDirectory;
+                TMPDIR = (tmpDir i);
+                ISLAND_NAME = i.profileName;
+                # Used directly in Fish shell, added into other shells below:
+                SHELL_PROMPT_PREFIX = "⟦${i.profileName}⟧ ";
+              };
+            };
+            programs.bash.initExtra = lib.mkAfter ''
+              PS1="$SHELL_PROMPT_PREFIX$PS1"
+            '';
+            programs.zsh.initContent = lib.mkOrder 1500 ''
+              PROMPT="$SHELL_PROMPT_PREFIX$PROMPT"
+            '';
+            xdg = {
+              enable = true;
+            };
           };
-          xdg = {
-            enable = true;
-          };
-        };
       };
 
-      unshareMounter = i: pkgs.writeShellScript "unshare-mounter-${i.profileName}" ''
-        set -euo pipefail
-
-        WORKSPACE_DIR="${config.home.homeDirectory}/${i.workspaceRoot}"
-
-        for D in \
-          "${config.xdg.configHome}/island/profiles"; do \
-          if [[ "$D" != "$HOME"/* ]]; then
-            continue
-          fi
-          TARGET="$WORKSPACE_DIR/''${D#"$HOME"/}"
-          mkdir -p "$TARGET"
-          ${pkgs.util-linux}/bin/mount --rbind "$D" "$TARGET"
-        done
-
-        ${pkgs.util-linux}/bin/mount --rbind "$WORKSPACE_DIR" "$HOME"
-
-        cd "$HOME"
-        exec ${pkgs.util-linux}/bin/setpriv \
-          --inh-caps=-all --ambient-caps=-all --bounding-set=-all \
-          -- "$@"
-      '';
-
-      # TODO: Check on propagation setting
-      # TODO: Mount /proc
-      mkUnsharedWorkspace = i: pkgs.writeShellScript "unshared-workspace-${i.profileName}"  ''
-        exec ${pkgs.util-linux}/bin/unshare --user --map-current-user \
-                     --mount --propagation private --keep-caps \
-                     -- ${unshareMounter i} "$@"
-      '';
-
-
-      mkUnsharedIsland = i: pkgs.writeShellApplication  {
-        name = "unshared-${(mkRunner i).name}";
-        text = ''
-          exec ${mkUnsharedWorkspace i} ${mkRunner i}/bin/${(mkRunner i).name} "$@"
-        '';
-      };
     in
     {
       home.packages =
@@ -168,29 +173,22 @@ in
       home.activation = lib.mapAttrs' (_: i:
         lib.nameValuePair "island-nested-home-manager-activate-${i.profileName}"
           (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
-          let 
-            activate = pkgs.writeShellScript "activate" ''
-            export PATH="$PATH:${pkgs.nix}/bin"
-            export HOME="${config.home.homeDirectory}/${i.workspaceRoot}"
-            exec ${(mkIslandHm i).activationPackage}/activate
-            '';
-          in
-          ''
-            set -euo pipefail
+           ''
+             set -euo pipefail
 
-            if [ -e "$HOME/.nix-profile" ]; then
-                warnEcho "nix-island: WARNING: ~/.nix-profile exists."
-                warnEcho "nix-island: Home-manager now stores profiles under XDG dirs allowing isolation."
-                warnEcho "nix-island: You still have the legacy profile link, this will prevent environment isolation."
-                warnEcho "nix-island: It should be safe to delete it AFAIK:"
-                warnEcho "nix-island:    rm ~/.nix-profile"
-            fi
+             if [ -e "$HOME/.nix-profile" ]; then
+                 warnEcho "nix-island: WARNING: ~/.nix-profile exists."
+                 warnEcho "nix-island: Home-manager now stores profiles under XDG dirs allowing isolation."
+                 warnEcho "nix-island: You still have the legacy profile link, this will prevent environment isolation."
+                 warnEcho "nix-island: It should be safe to delete it AFAIK:"
+                 warnEcho "nix-island:    rm ~/.nix-profile"
+             fi
 
-            # HACK: Island requires this variable but it is only present if the user is logged in.
-            export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/tmp/run/user/$(id -u)}"
-            mkdir -p $XDG_RUNTIME_DIR
+             # HACK: Island requires this variable but it is only present if the user is logged in.
+             export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/tmp/run/user/$(id -u)}"
+             mkdir -p $XDG_RUNTIME_DIR
 
-            run ${mkRunner i}/bin/${(mkRunner i).name}  ${activate}
-          ''))) cfg.islands;
+             run ${mkRunner i}/bin/${(mkRunner i).name} ${(mkIslandHm i).activationPackage}/activate
+           ''))) cfg.islands;
     });
 }

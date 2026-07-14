@@ -32,6 +32,7 @@ is this similar to flatpack:
 
 ### todo:
 - [ ] home-manager-module: during activation find some way to indicate that the configuration is nested, maybe filter the output of the activation script via piping to another application or function.
+- [ ] provide separate nix-store, and have the closure inserted into and loaded from that store.
 
 ### future ideas:
 - [ ] provide already made sandboxes for each application.

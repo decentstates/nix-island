@@ -4,16 +4,12 @@
 }:
 
 { profileName
-, workspaceRoot # absolute path
 , passthroughEnv ? [ ] 
 , readOnlyPaths ? [ ]
 , readWritePaths ? [ ]
 , bindTcpPorts ? [ ] 
 , connectTcpPorts ? [ ]
 }:
-
-assert lib.assertMsg (lib.hasPrefix "/" (toString workspaceRoot))
-  "mkIsland(${profileName}): `workspaceRoot` must be an absolute path";
 
 assert builtins.match "^[A-Za-z0-9_-]+$" profileName != null;
 
@@ -51,7 +47,7 @@ let
     path_beneath = [
       {
         allowed_access = [ "abi.read_write" ];
-        parent = [ "/dev/tty" "/dev/pts" "/dev/ptmx" workspaceRoot ];
+        parent = [ "/dev/tty" "/dev/pts" "/dev/ptmx" ];
       }
     ] ++ pathBeneath;
   } // lib.optionalAttrs (netPort != [ ]) { net_port = netPort; };
@@ -59,8 +55,8 @@ let
   islandProfile = pkgs.runCommand "island-${profileName}-profile" { } ''
     mkdir -p "$out/landlock"
     cp ${tomlFormat.generate "profile.toml" {
-      workspace = true;
-      context = [{ when_beneath = toString workspaceRoot; }];
+      inherit workspace;
+      context = [];
     }} "$out/profile.toml"
     # TODO: Use the toml file from within the package.
     cp ${./../island/island-default-base.toml} \
