@@ -4,27 +4,16 @@ let
   setupWrapper = pkgs.writeShellScript "island-${island.profileName}-setup" ''
     set -euo pipefail
 
-    # Both levels live under world-writable sticky /tmp: refuse planted
-    # symlinks/foreign dirs; 0700 on the validated base then protects
-    # everything beneath it.
-    create_owned_dir() {
-      mkdir -p "$1" 2>/dev/null || true
-      if [ -L "$1" ] || [ ! -O "$1" ]; then
-        echo "island: refusing $1: symlink or not owned by us" >&2
-        exit 1
-      fi
-      chmod 700 "$1"
-    }
-    base=$(${pkgs.coreutils}/bin/dirname ${island.tmpDir})
-    [ "$base" = /tmp ] || create_owned_dir "$base"
-    create_owned_dir ${island.tmpDir}
+    # TODO: Check permissions on these dirs
+    mkdir -p ${lib.escapeShellArg island.tmpDir}
+    chmod 700 ${lib.escapeShellArg island.tmpDir}
     export ORIGINAL_TMPDIR="''${TMPDIR:-/tmp}"
-    export TMPDIR=${island.tmpDir}
+    export TMPDIR=${lib.escapeShellArg island.tmpDir}
 
+    mkdir -p ${lib.escapeShellArg island.runDir}
+    chmod 700 ${lib.escapeShellArg island.runDir}
     export ORIGINAL_XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-}"
     export XDG_RUNTIME_DIR=${island.runDir}
-    mkdir -p $XDG_RUNTIME_DIR
-    chmod 700 $XDG_RUNTIME_DIR
 
     exec "$@"
   '';

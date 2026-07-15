@@ -239,19 +239,14 @@ in
       lib.nameValuePair "island-nested-home-manager-activate-${i.profileName}"
         (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
          ''
-           set -euo pipefail
-
-           if [ -e "$HOME/.nix-profile" ]; then
+           if [ -e "$HOME/.nix-profile" ] && [ -z "$HAS_WARNED_ABOUT_NIX_PROFILE" ]; then
                warnEcho "nix-island: WARNING: ~/.nix-profile exists."
                warnEcho "nix-island: Home-manager now stores profiles under XDG dirs allowing isolation."
                warnEcho "nix-island: You still have the legacy profile link, this will prevent environment isolation."
                warnEcho "nix-island: It should be safe to delete it AFAIK:"
                warnEcho "nix-island:    rm ~/.nix-profile"
+               HAS_WARNED_ABOUT_NIX_PROFILE="true"
            fi
-
-           # HACK: Island requires this variable but it is only present if the user is logged in.
-           export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/tmp/run/user/$(id -u)}"
-           mkdir -p $XDG_RUNTIME_DIR
 
            run ${mkRunner i}/bin/${(mkRunner i).name} ${i.hm.homeManagerConfiguration.activationPackage}/activate
          ''))) cfg.islands;
