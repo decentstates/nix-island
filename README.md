@@ -1,30 +1,66 @@
 # nix-island
 
+Better hygiene for your shell.
+
+nix-island, inspired by [Island](https://github.com/landlock-lsm/island), realises that for effective sandboxing:
+- Data must be paired with software.
+- Environments of applications are necessary for power users, instead of single sandboxed apps.
+- An inversion of the existing model is needed: 
+  Instead of running some software in sandboxes, we should always be in a sandboxed environment.
+- Building those environments deterministically and composably becomes trivial with nix.
+
 > Warning:
-> Build on top of the WIP island and LandlockConfig, things will break.
-> I am not a security expert, this is an experiment.
+> I am not a security expert, this is experimental.
 
-I built this to provide a layer of isolation for data between applications.
-
-How I use it:
-- Minimal programs installed into my base.
-- In my WM (sway) I intercept graphical applications being launched and run them in a sandbox.
-- There are different terminal emulators with different of sandboxing, I use different themes to distinguish them.
-- I have an unsandboxed shell available, with simple old programs, disabling git-hooks and other automatic code running.
+Recommended use:
+- Have minimal applications installed into your base system and user profile.
+- Islands for `untrusted`, `development`, `secure`, `personal`.
+- Each has repositories, `secure` can pull/push to `development` which can pull/push to `untrusted`.
+- `secure`:
+  - has access to keys and SUID binaries
+  - prevents auto-running code like git-hooks, direnv
+  - prevents auto-proliferating data like undo-files and backup files in vim.
+- `personal` has email, messaging, web browser.
+- When you want a terminal you choose an environment, on sway I use wmenu to list them.
+  - I add an unsandboxed shell option.
+  - Each island/unsandboxed gets a different terminal theme.
+- When the WM shows Apps, it builds them from the island's desktopEntries, that automatically sandbox them.
+- Customise it as you like, have an island for no-javascript web browsing, that can only access certain websites if you need.
 
 The result:
 - Sandboxing by default.
 - Data isolation between sandboxes.
+- Low attack surface outside the sandboxes.
 - Ability to run the unsandboxed shell if I need to escalate.
 
-why not user namespaces / containers, or using different users:
-- simpler than containers. simpler then seccomp (no bpf, no suid.) (e.g. firejail).
-- no file permission issues.
+## FAQs
 
-is this similar to flatpack:
-- maybe a bit
-- but I want to sandbox environments, multiple applications paired with data.
-- seems like landlock is a simpler mechanism than filtering syscalls?
+What threat are we mitigating:
+- Undesirable user-context code execution, malicious or not.
+  - Slop code.
+  - Supply-chain attacks.
+  - Dev-tool attacks.
+  - Accidental authenticated actions.
+
+  From limiting what data we have access to (hard control via landlock), 
+  and environment software and configuration (soft control via nix/home-manager.)
+
+What doesn't this protect from:
+- Landlock escapes.
+- Privilege escalation attacks.
+- Kernel attacks.
+
+Why not user namespaces / containers, seccomp-bpf, different users, bubblewrap for sandboxing:
+- A different sandboxing mechanism can be used.
+- I'm no expert here but landlock seems simpler, lower surface area, purpose built for this.
+- Avoid file permission issues between users/namespaces.
+
+Isn't this similar to bubblewrap/flatpack/etc:
+- probably
+- but focused on environments + data, instead of executables, or apps + data.
+- I want to achieve something similar to MacOS, where the terminal can't access
+  my documents directory.
+
 
 ### capabilities
 
@@ -118,10 +154,31 @@ Each island exposes read-only outputs under `island.islands.<name>.hm`:
 - nix.settings.use-xdg-base-directories should be set to true to allow isolated home-manager environments to be set up.
 - island home-manager modules recieve the same extraSpecialArgs as the parent home-manager
 
+
+## similar and related tools
+
+data-oriented sandboxing:
+- island - (landlock) this tool is built using and inspired heavily by island.
+
+executable-oriented sandboxing:
+- flatpak - App wrapping using bubblewrap.
+- firejail - namespace+seccomp-bpf sandboxing
+- bubblewrap -
+- bubblejail
+- landrun - (landlock) similar to bubblewrap but using landlock.
+
+System wide sandboxing:
+- systemd - sandboxing services (complementary)
+- apparmor - file-path based security policy
+- selinux - similar to above but file-label based security policy
+
 ### todo:
 - [ ] home-manager-module: during activation find some way to indicate that the configuration is nested, maybe filter the output of the activation script via piping to another application or function.
 - [ ] provide separate nix-store, and have the closure inserted into and loaded from that store.
 - [ ] look into dbus activateable, also the menu side of desktop entries
+- [ ] Compare with flatpacks approach for wayland/pulseaudio/etc
+  https://github.com/flatpak/flatpak/commit/b4822e2230c62dc890f0392677fa4a5f98f10450
 
 ### future ideas:
 - [ ] provide already made sandboxes for each application.
+
