@@ -4,7 +4,6 @@
 }:
 
 { profileName
-, passthroughEnv ? [ ] 
 , readOnlyPaths ? [ ]
 , readWritePaths ? [ ]
 , bindTcpPorts ? [ ] 
@@ -44,13 +43,8 @@ let
       handled_access_net = [ "abi.all" ];
       scoped = [ "abi.all" ];
     }];
-    path_beneath = [
-      {
-        allowed_access = [ "abi.read_write" ];
-        parent = [ "/dev/tty" "/dev/pts" "/dev/ptmx" ];
-      }
-    ] ++ pathBeneath;
-  } // lib.optionalAttrs (netPort != [ ]) { net_port = netPort; };
+  } // lib.optionalAttrs (pathBeneath != [ ]) { path_beneath = pathBeneath; }
+    // lib.optionalAttrs (netPort != [ ]) { net_port = netPort; };
 
   islandProfile = pkgs.runCommand "island-${profileName}-profile" { } ''
     mkdir -p "$out/landlock"
