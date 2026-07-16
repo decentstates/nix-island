@@ -1,16 +1,16 @@
-# evalCapabilities { island, module } — evaluate an island's capability
+# evalCapabilities { house, module } — evaluate a house's capability
 # module against the schema plus the shipped, flag-gated capabilities.
 # Compose several capability modules via `imports` within `module`.
 #
-# `island` is the frozen per-island identity attrset made available to
+# `house` is the frozen per-house identity attrset made available to
 # capability modules as a specialArg:
-#   { profileName, runnerName, islandHomeDir, tmpDir, runDir, realHomeDir, username }
+#   { profileName, runnerName, houseHomeDir, tmpDir, runDir, realHomeDir, username }
 { pkgs, lib }:
 
-{ island, module ? { } }:
+{ house, module ? { } }:
 
 lib.evalModules {
-  specialArgs = { inherit pkgs island; };
+  specialArgs = { inherit pkgs house; };
   modules = [
     ./schema.nix
     ./defaults.nix

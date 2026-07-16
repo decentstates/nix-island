@@ -1,8 +1,8 @@
-# nix-island
+# nix-housing
 
 Better hygiene for your shell.
 
-nix-island, inspired by [Island](https://github.com/landlock-lsm/island), realises that for effective sandboxing:
+nix-housing, inspired by [Island](https://github.com/landlock-lsm/island), realises that for effective sandboxing:
 - Data must be paired with software.
 - Environments of applications are necessary for power users, instead of single sandboxed apps.
 - An inversion of the existing model is needed: 
@@ -14,7 +14,7 @@ nix-island, inspired by [Island](https://github.com/landlock-lsm/island), realis
 
 Recommended use:
 - Have minimal applications installed into your base system and user profile.
-- Islands for `untrusted`, `development`, `secure`, `personal`.
+- Houses for `untrusted`, `development`, `secure`, `personal`.
 - Each has repositories, `secure` can pull/push to `development` which can pull/push to `untrusted`.
 - `secure`:
   - has access to keys and SUID binaries
@@ -23,9 +23,9 @@ Recommended use:
 - `personal` has email, messaging, web browser.
 - When you want a terminal you choose an environment, on sway I use wmenu to list them.
   - I add an unsandboxed shell option.
-  - Each island/unsandboxed gets a different terminal theme.
-- When the WM shows Apps, it builds them from the island's desktopEntries, that automatically sandbox them.
-- Customise it as you like, have an island for no-javascript web browsing, that can only access certain websites if you need.
+  - Each house/unsandboxed gets a different terminal theme.
+- When the WM shows Apps, it builds them from the house's desktopEntries, that automatically sandbox them.
+- Customise it as you like, have a house for no-javascript web browsing, that can only access certain websites if you need.
 
 The result:
 - Sandboxing by default.
@@ -64,8 +64,8 @@ Isn't this similar to bubblewrap/flatpack/etc:
 
 ### capabilities
 
-Islands grant access through **capability modules**, evaluated with the Nix
-module system (`island.islands.<name>.capabilities`, a module; compose
+Houses grant access through **capability modules**, evaluated with the Nix
+module system (`housing.houses.<name>.capabilities`, a module; compose
 further capability modules via `imports`).
 Every capability contributes to the shared grant options: `passthroughEnv`,
 `execWrappers` (setup scripts composed around the sandbox entry),
@@ -76,12 +76,12 @@ Four capabilities ship in-tree (`nix/lib/capabilities/`) and are always
 imported, gated by enable flags:
 
 - `defaults` (enabled by default) — terminal/locale/identity environment
-  passthrough, tty access, island home + tmpdir read/write, and the setup
-  wrapper that creates the island tmpdir and a private `TMPDIR` and
-  `XDG_RUNTIME_DIR`. Disable it for a bare island and restate what you need.
+  passthrough, tty access, house home + tmpdir read/write, and the setup
+  wrapper that creates the house tmpdir and a private `TMPDIR` and
+  `XDG_RUNTIME_DIR`. Disable it for a bare house and restate what you need.
 - `dbus` — session bus access through a filtering `xdg-dbus-proxy` running
   outside the sandbox; `DBUS_SESSION_BUS_ADDRESS` points at the proxy
-  socket in the island's private runtime dir, and `dbus.talk` / `dbus.own`
+  socket in the house's private runtime dir, and `dbus.talk` / `dbus.own`
   control the filter (default: portals and notifications). See the threat
   model below.
 - `gpu` — `/dev/dri` read/write (incl. `ioctl_dev`), `/run/opengl-driver`
@@ -89,7 +89,7 @@ imported, gated by enable flags:
 - `wayland` — see below; implies `dbus` and `gpu` (via `mkDefault`).
 
 ```nix
-island.islands.browser.capabilities = {
+housing.houses.browser.capabilities = {
   wayland.enable = true;
   connectTcpPorts = [ 443 ];
 };
@@ -97,15 +97,15 @@ island.islands.browser.capabilities = {
 
 Ad-hoc grants go straight in the module (or its `imports`); capability
 modules receive
-`pkgs` and the frozen island identity `island` (`profileName`, `runnerName`,
-`islandHomeDir`, `tmpDir`, `runDir`, `realHomeDir`, `username`) as specialArgs.
+`pkgs` and the frozen house identity `house` (`profileName`, `runnerName`,
+`houseHomeDir`, `tmpDir`, `runDir`, `realHomeDir`, `username`) as specialArgs.
 The evaluated result is introspectable via the read-only
-`island.islands.<name>.capabilityConfig`.
+`housing.houses.<name>.capabilityConfig`.
 
 ### desktop (Wayland) apps
 
 Enable the `wayland` capability to run native Wayland GUI applications
-inside an island:
+inside a house:
 
 - The runner connects to the compositor *before* sandboxing and creates a
   per-launch **restricted** Wayland socket via `security-context-v1`
@@ -117,24 +117,24 @@ inside an island:
   security-context support.
 - GPU and session-bus access come from the implied `gpu` and `dbus`
   capabilities.
-- The app gets a private `XDG_RUNTIME_DIR` under the island tmpdir.
+- The app gets a private `XDG_RUNTIME_DIR` under the house tmpdir.
 - X11/Xwayland is deliberately unsupported: X11 clients can snoop each other,
-  which would undo the island boundary.
+  which would undo the house boundary.
 
-Each island exposes read-only outputs under `island.islands.<name>.hm`:
+Each house exposes read-only outputs under `housing.houses.<name>.hm`:
 
 - `hm.homeManagerConfiguration` — the evaluated nested home-manager
   configuration (e.g. `.activationPackage`).
 - `hm.desktopEntries` — a derivation of `share/applications/*.desktop`
-  entries for the island's applications, `Exec=` rewritten through the island
-  runner and `Name=` tagged with `⟦<island>⟧`. Point a launcher's
+  entries for the house's applications, `Exec=` rewritten through the house
+  runner and `Name=` tagged with `⟦<house>⟧`. Point a launcher's
   `XDG_DATA_DIRS` at an aggregation of these to get a sandboxed-apps menu.
 
 ### threat model / known gaps
 
 - **Landlock cannot block `connect()` on named unix sockets** (true up to and
   including ABI 7, which only adds audit). Consequently the session D-Bus bus
-  at `/run/user/N/bus` is reachable by any malicious island process that
+  at `/run/user/N/bus` is reachable by any malicious house process that
   hardcodes the path, and the bus is an escape hatch: e.g.
   `org.freedesktop.systemd1` `StartTransientUnit` runs commands outside the
   sandbox. Because blocking is impossible at this layer, the `dbus`
@@ -152,7 +152,7 @@ Each island exposes read-only outputs under `island.islands.<name>.hm`:
 
 ### notes:
 - nix.settings.use-xdg-base-directories should be set to true to allow isolated home-manager environments to be set up.
-- island home-manager modules recieve the same extraSpecialArgs as the parent home-manager
+- house home-manager modules recieve the same extraSpecialArgs as the parent home-manager
 
 
 ## similar and related tools
@@ -181,4 +181,3 @@ System wide sandboxing:
 
 ### future ideas:
 - [ ] provide already made sandboxes for each application.
-

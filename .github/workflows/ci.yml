@@ -14,5 +14,5 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Format check
         run: nix fmt -- --check .
-      - name: Flake check (builds island + demo-shell)
+      - name: Flake check (builds island)
         run: nix flake check -L

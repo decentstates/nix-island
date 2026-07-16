@@ -4,29 +4,29 @@
 }:
 
 let
-  mkIslandRunner = import ./mk-island-runner.nix { inherit pkgs lib island; };
+  mkHouseRunner = import ./mk-house-runner.nix { inherit pkgs lib island; };
   evalCapabilities = import ./capabilities/eval.nix { inherit pkgs lib; };
 in
 
-{ island
+{ house
 , capabilitiesModule ? { }
 }:
 
 let
   capabilityConfig = (evalCapabilities {
-    inherit island;
+    inherit house;
     module = capabilitiesModule;
   }).config;
 
-  islandRunner = mkIslandRunner {
-    inherit (island) runnerName profileName;
+  houseRunner = mkHouseRunner {
+    inherit (house) runnerName profileName;
     inherit (capabilityConfig) passthroughEnv;
   };
 in
 pkgs.writeShellApplication {
-  name = island.runnerName;
+  name = house.runnerName;
   text = ''
     exec ${toString capabilityConfig.execWrappers} \
-      ${islandRunner}/bin/${island.runnerName} "$@"
+      ${houseRunner}/bin/${house.runnerName} "$@"
   '';
 }

@@ -36,7 +36,7 @@ let
         parent = readOnlyPaths;
     });
 
-  nixIslandRules = {
+  housingRules = {
     abi = 6;
     ruleset = [{
       handled_access_fs = [ "abi.all" ];
@@ -46,7 +46,7 @@ let
   } // lib.optionalAttrs (pathBeneath != [ ]) { path_beneath = pathBeneath; }
     // lib.optionalAttrs (netPort != [ ]) { net_port = netPort; };
 
-  islandProfile = pkgs.runCommand "island-${profileName}-profile" { } ''
+  houseProfile = pkgs.runCommand "house-${profileName}-profile" { } ''
     mkdir -p "$out/landlock"
     cp ${tomlFormat.generate "profile.toml" {
       workspace = false;
@@ -55,8 +55,8 @@ let
     # TODO: Use the toml file from within the package.
     cp ${./../island/island-default-base.toml} \
        "$out/landlock/island-default-base.toml"
-    cp ${tomlFormat.generate "island.toml" nixIslandRules} \
-       "$out/landlock/20-island.toml"
+    cp ${tomlFormat.generate "island.toml" housingRules} \
+       "$out/landlock/20-housing.toml"
   '';
 in 
-  islandProfile
+  houseProfile

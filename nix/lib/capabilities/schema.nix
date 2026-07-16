@@ -6,7 +6,7 @@
       type = lib.types.listOf lib.types.str;
       default = [ ];
       description = ''
-        Environment variables preserved across the island boundary; everything
+        Environment variables preserved across the house boundary; everything
         else is stripped by the runner's env filter.
       '';
     };
@@ -19,7 +19,7 @@
         then `exec "$@"`. Composed left-to-right, outermost first, around the
         sandbox entry:
 
-            exec <w1> <w2> ... <island-runner> <cmd...>
+            exec <w1> <w2> ... <house-runner> <cmd...>
 
         Wrappers run *outside* the sandbox. Order across capabilities with
         `lib.mkOrder` (the defaults setup wrapper sits at 500).

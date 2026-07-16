@@ -1,58 +1,58 @@
 hmArgs@{ config, inputs, lib, pkgs, modulesPath, ... }:
 
 let
-  cfg = config.island;
-  islandLib = import ./lib.nix { inherit pkgs; island = cfg.package; };
+  cfg = config.housing;
+  housingLib = import ./lib.nix { inherit pkgs; island = cfg.islandPackage; };
 
   realHomeDir = config.home.homeDirectory;
 
-  tmpDir = i: "/tmp/islands-${config.home.username}/${i.profileName}";
-  runDir = i: "/tmp/islands-${config.home.username}/${i.profileName}/run";
+  tmpDir = h: "/tmp/houses-${config.home.username}/${h.profileName}";
+  runDir = h: "/tmp/houses-${config.home.username}/${h.profileName}/run";
 
-  islandCtx = i: {
-    inherit (i) profileName runnerName islandHomeDir;
+  houseCtx = h: {
+    inherit (h) profileName runnerName houseHomeDir;
     inherit realHomeDir;
-    tmpDir = tmpDir i;
-    runDir = runDir i;
+    tmpDir = tmpDir h;
+    runDir = runDir h;
     username = config.home.username;
   };
 
-  mkRunner = i:
+  mkRunner = h:
     let
       inner = pkgs.writeShellScript "activate" ''
         set -e
 
         # Bootstrapping the env vars
-        export HOME="${i.islandHomeDir}"
-        export TMPDIR="${tmpDir i}"
+        export HOME="${h.houseHomeDir}"
+        export TMPDIR="${tmpDir h}"
         # Required for the sourcing below to correcly find the nix-profile:
-        export XDG_STATE_HOME="${i.islandHomeDir}/.local/state"
+        export XDG_STATE_HOME="${h.houseHomeDir}/.local/state"
 
         . /etc/profile
-        . ${i.hm.homeManagerConfiguration.activationPackage}/home-path/etc/profile.d/hm-session-vars.sh
+        . ${h.hm.homeManagerConfiguration.activationPackage}/home-path/etc/profile.d/hm-session-vars.sh
 
         [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
       '';
-      capabilitiesRunner = islandLib.mkCapabilitiesRunner {
-        island = islandCtx i;
-        capabilitiesModule = i.capabilities;
+      capabilitiesRunner = housingLib.mkCapabilitiesRunner {
+        house = houseCtx h;
+        capabilitiesModule = h.capabilities;
       };
     in
     pkgs.writeShellApplication {
-      name = i.runnerName;
+      name = h.runnerName;
       text = ''
-        exec ${capabilitiesRunner}/bin/${i.runnerName} ${inner} "$@"
+        exec ${capabilitiesRunner}/bin/${h.runnerName} ${inner} "$@"
       '';
     };
 
-  mkProfile = i: islandLib.mkIslandProfile {
-    inherit (i) profileName;
-    inherit (i.capabilityConfig)
+  mkProfile = h: housingLib.mkHouseProfile {
+    inherit (h) profileName;
+    inherit (h.capabilityConfig)
       readOnlyPaths readWritePaths
       bindTcpPorts connectTcpPorts;
   };
 
-  mkIslandHm = i: import modulesPath {
+  mkHouseHm = h: import modulesPath {
     inherit pkgs;
     check = true;
     # HACK: But should be stable as HM adding extra args is a breaking
@@ -65,16 +65,16 @@ let
         innerConfig = innerHomeManagerArgs.config;
       in
       {
-        imports = i.modules;
+        imports = h.modules;
         home = {
           inherit (config.home) username stateVersion;
-          homeDirectory = i.islandHomeDir;
+          homeDirectory = h.houseHomeDir;
           sessionVariables = {
             HOME = innerConfig.home.homeDirectory;
-            TMPDIR = (tmpDir i);
-            ISLAND_NAME = i.profileName;
+            TMPDIR = (tmpDir h);
+            HOUSE_NAME = h.profileName;
             # Used directly in Fish shell, added into other shells below:
-            SHELL_PROMPT_PREFIX = "⟦${i.profileName}⟧ ";
+            SHELL_PROMPT_PREFIX = "⟦${h.profileName}⟧ ";
           };
         };
         programs.bash.initExtra = lib.mkAfter ''
@@ -89,47 +89,47 @@ let
       };
   };
 
-  mkDesktopEntries = i: pkgs.runCommand "island-${i.profileName}-desktop-entries" { } ''
-    apps=${i.hm.homeManagerConfiguration.activationPackage}/home-path/share/applications
+  mkDesktopEntries = h: pkgs.runCommand "house-${h.profileName}-desktop-entries" { } ''
+    apps=${h.hm.homeManagerConfiguration.activationPackage}/home-path/share/applications
     mkdir -p "$out/share/applications"
     [ -d "$apps" ] || exit 0
     for entry in "$apps"/*.desktop; do
       [ -e "$entry" ] || continue
       sed \
-        -e 's|^Exec=|Exec=${mkRunner i}/bin/${i.runnerName} |' \
-        -e 's|^\(Name\(\[[^]]*\]\)\{0,1\}=.*\)$|\1 ⟦${i.profileName}⟧|' \
+        -e 's|^Exec=|Exec=${mkRunner h}/bin/${h.runnerName} |' \
+        -e 's|^\(Name\(\[[^]]*\]\)\{0,1\}=.*\)$|\1 ⟦${h.profileName}⟧|' \
         -e '/^DBusActivatable=/d' \
         -e '/^TryExec=/d' \
-        "$entry" > "$out/share/applications/island-${i.profileName}-$(basename "$entry")"
+        "$entry" > "$out/share/applications/house-${h.profileName}-$(basename "$entry")"
     done
   '';
 
-  islandModule = { name, config, ... }:
+  houseModule = { name, config, ... }:
     let
-      i = config;
+      h = config;
     in
     {
     options = {
       profileName = lib.mkOption {
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
         default =  "${name}";
-        description = "Island profile name";
+        description = "House profile name";
       };
       runnerName = lib.mkOption {
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
-        default =  "island-${name}";
-        description = "Island runner executable name";
+        default =  "house-${name}";
+        description = "House runner executable name";
       };
-      islandHomeDir = lib.mkOption {
+      houseHomeDir = lib.mkOption {
         type = lib.types.str;
-        default = "${realHomeDir}/islands/${name}";
-        defaultText = lib.literalExpression ''"''${config.home.homeDirectory}/islands/<name>"'';
-        description = "The island's home directory (absolute, beneath the user home).";
+        default = "${realHomeDir}/houses/${name}";
+        defaultText = lib.literalExpression ''"''${config.home.homeDirectory}/houses/<name>"'';
+        description = "The house's home directory (absolute, beneath the user home).";
       };
       modules = lib.mkOption {
         type = lib.types.listOf lib.types.deferredModule;
         default = [ ];
-        description = "The island's home-manager modules.";
+        description = "The house's home-manager modules.";
       };
       capabilities = lib.mkOption {
         type = lib.types.deferredModule;
@@ -147,25 +147,25 @@ let
 
           Can use `imports = []` to provide your own capabilities modules:
           ```
-          imports = [ { pkgs, lib, island }: { ... } ]
+          imports = [ { pkgs, lib, house }: { ... } ]
           ```
 
-          Where island is:
+          Where house is:
           ```
-          { profileName, runnerName, islandHomeDir, tmpDir, runDir, realHomeDir, username }
+          { profileName, runnerName, houseHomeDir, tmpDir, runDir, realHomeDir, username }
           ```
         '';
       };
       capabilityConfig = lib.mkOption {
         type = lib.types.raw;
         readOnly = true;
-        default = (islandLib.evalCapabilities {
-          island = islandCtx i;
-          module = i.capabilities;
+        default = (housingLib.evalCapabilities {
+          house = houseCtx h;
+          module = h.capabilities;
         }).config;
-        defaultText = lib.literalMD "the evaluated capability configuration of this island";
+        defaultText = lib.literalMD "the evaluated capability configuration of this house";
         description = ''
-          The island's evaluated capability configuration (read-only),
+          The house's evaluated capability configuration (read-only),
           e.g. `.readWritePaths`, `.execWrappers`.
         '';
       };
@@ -173,22 +173,22 @@ let
         homeManagerConfiguration = lib.mkOption {
           type = lib.types.raw;
           readOnly = true;
-          default = mkIslandHm i;
-          defaultText = lib.literalMD "the evaluated nested home-manager configuration of this island";
+          default = mkHouseHm h;
+          defaultText = lib.literalMD "the evaluated nested home-manager configuration of this house";
           description = ''
-            The island's evaluated nested home-manager configuration
+            The house's evaluated nested home-manager configuration
             (read-only). Exposes e.g. `.activationPackage` and `.config`.
           '';
         };
         desktopEntries = lib.mkOption {
           type = lib.types.package;
           readOnly = true;
-          default = mkDesktopEntries i;
-          defaultText = lib.literalMD "generated desktop entries for this island's applications";
+          default = mkDesktopEntries h;
+          defaultText = lib.literalMD "generated desktop entries for this house's applications";
           description = ''
             Derivation with `share/applications/*.desktop` entries for every
-            desktop entry installed in the island's nested home-manager
-            environment, rewritten to launch through the island runner and
+            desktop entry installed in the house's nested home-manager
+            environment, rewritten to launch through the house runner and
             tagged with `⟦<profileName>⟧` (read-only).
           '';
         };
@@ -197,58 +197,61 @@ let
   };
 in
 {
-  options.island = {
-    enable = lib.mkEnableOption "Enable island.";
-    package = lib.mkOption {
+  options.housing = {
+    enable = lib.mkEnableOption "Enable housing.";
+    islandPackage = lib.mkOption {
       type = lib.types.package;
       default = pkgs.callPackage ./island/island-package.nix { };
-      description = "Island package.";
+      defaultText = lib.literalExpression "pkgs.callPackage ./island/island-package.nix { }";
+      description = "The island (Landlock sandboxing tool) package to use.";
     };
-    islands = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.submodule islandModule);
+    houses = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule houseModule);
       default = { };
-      description = "Island sandbox profiles";
+      description = "House sandbox profiles";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    assertions = lib.mapAttrsToList (name: i: {
-      assertion = lib.hasPrefix "${realHomeDir}/" i.islandHomeDir;
+    assertions = lib.mapAttrsToList (name: h: {
+      assertion = lib.hasPrefix "${realHomeDir}/" h.houseHomeDir;
       message = ''
-        island.islands.${name}.islandHomeDir (${i.islandHomeDir}) must be
+        housing.houses.${name}.houseHomeDir (${h.houseHomeDir}) must be
         an absolute path beneath the user home (${realHomeDir}).
       '';
-    }) cfg.islands;
+    }) cfg.houses;
 
     home.packages =
-      [ cfg.package ]
-        ++ lib.mapAttrsToList (_: i: mkRunner i) cfg.islands;
+      [ cfg.islandPackage ]
+        ++ lib.mapAttrsToList (_: h: mkRunner h) cfg.houses;
 
-    xdg.configFile = lib.mapAttrs' (_: i:
-      lib.nameValuePair "island/profiles/${i.profileName}" {
-        source = mkProfile i;
+    # NOTE: "island/profiles" is the upstream island CLI's profile lookup
+    # path (~/.config/island/profiles/<name>); it is not ours to rename.
+    xdg.configFile = lib.mapAttrs' (_: h:
+      lib.nameValuePair "island/profiles/${h.profileName}" {
+        source = mkProfile h;
         recursive = true;
-      }) cfg.islands;
+      }) cfg.houses;
 
-    home.file = lib.mapAttrs' (_: i:
+    home.file = lib.mapAttrs' (_: h:
       lib.nameValuePair
-        "${lib.removePrefix "${realHomeDir}/" i.islandHomeDir}/.keep"
-        { text = ""; }) cfg.islands;
+        "${lib.removePrefix "${realHomeDir}/" h.houseHomeDir}/.keep"
+        { text = ""; }) cfg.houses;
 
-    home.activation = lib.mapAttrs' (_: i:
-      lib.nameValuePair "island-nested-home-manager-activate-${i.profileName}"
+    home.activation = lib.mapAttrs' (_: h:
+      lib.nameValuePair "house-nested-home-manager-activate-${h.profileName}"
         (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
          ''
            if [ -e "$HOME/.nix-profile" ] && [ -z "$HAS_WARNED_ABOUT_NIX_PROFILE" ]; then
-               warnEcho "nix-island: WARNING: ~/.nix-profile exists."
-               warnEcho "nix-island: Home-manager now stores profiles under XDG dirs allowing isolation."
-               warnEcho "nix-island: You still have the legacy profile link, this will prevent environment isolation."
-               warnEcho "nix-island: It should be safe to delete it AFAIK:"
-               warnEcho "nix-island:    rm ~/.nix-profile"
+               warnEcho "nix-housing: WARNING: ~/.nix-profile exists."
+               warnEcho "nix-housing: Home-manager now stores profiles under XDG dirs allowing isolation."
+               warnEcho "nix-housing: You still have the legacy profile link, this will prevent environment isolation."
+               warnEcho "nix-housing: It should be safe to delete it AFAIK:"
+               warnEcho "nix-housing:    rm ~/.nix-profile"
                HAS_WARNED_ABOUT_NIX_PROFILE="true"
            fi
 
-           run ${mkRunner i}/bin/${(mkRunner i).name} ${i.hm.homeManagerConfiguration.activationPackage}/activate
-         ''))) cfg.islands;
+           run ${mkRunner h}/bin/${(mkRunner h).name} ${h.hm.homeManagerConfiguration.activationPackage}/activate
+         ''))) cfg.houses;
   };
 }

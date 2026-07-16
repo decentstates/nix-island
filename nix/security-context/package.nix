@@ -7,7 +7,7 @@
 }:
 
 stdenv.mkDerivation {
-  pname = "island-security-context";
+  pname = "housing-security-context";
   version = "0.1.0";
 
   src = ./.;
@@ -23,23 +23,23 @@ stdenv.mkDerivation {
     wayland-scanner private-code "$xml" security-context-v1-protocol.c
 
     $CC -O2 -Wall -Wextra \
-      island-security-context.c security-context-v1-protocol.c \
+      housing-security-context.c security-context-v1-protocol.c \
       $(pkg-config --cflags --libs wayland-client) \
-      -o island-security-context
+      -o housing-security-context
 
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
-    install -Dm555 island-security-context $out/bin/island-security-context
+    install -Dm555 housing-security-context $out/bin/housing-security-context
     runHook postInstall
   '';
 
   meta = {
-    description = "Wayland security-context-v1 wrapper for nix-island launches";
+    description = "Wayland security-context-v1 wrapper for nix-housing launches";
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;
-    mainProgram = "island-security-context";
+    mainProgram = "housing-security-context";
   };
 }

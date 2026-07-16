@@ -1,8 +1,9 @@
-// island-security-context: attach a Wayland security context to a sandboxed
+// TODO: REVIEW
+// housing-security-context: attach a Wayland security context to a sandboxed
 // launch.
 //
 // Usage:
-//   island-security-context --app-id ID --runtime-dir DIR -- CMD [ARGS...]
+//   housing-security-context --app-id ID --runtime-dir DIR -- CMD [ARGS...]
 //
 // Connects to the compositor via the *current* environment, asks
 // wp_security_context_manager_v1 for a restricted listening socket at
@@ -90,19 +91,19 @@ static int open_validated_dir(const char *dir) {
 static int exec_fallback(char **cmd, const char *runtime_dir,
                          const char *why) {
     fprintf(stderr,
-            "island-security-context: %s; running without Wayland access\n",
+            "housing-security-context: %s; running without Wayland access\n",
             why);
     unsetenv("WAYLAND_DISPLAY");
     setenv("XDG_RUNTIME_DIR", runtime_dir, 1);
     execvp(cmd[0], cmd);
-    fprintf(stderr, "island-security-context: exec %s: %s\n", cmd[0],
+    fprintf(stderr, "housing-security-context: exec %s: %s\n", cmd[0],
             strerror(errno));
     return 127;
 }
 
 static int usage(void) {
     fprintf(stderr,
-            "usage: island-security-context --app-id ID --runtime-dir DIR "
+            "usage: housing-security-context --app-id ID --runtime-dir DIR "
             "-- CMD [ARGS...]\n");
     return 127;
 }
@@ -132,7 +133,7 @@ int main(int argc, char *argv[]) {
     int dir_fd = open_validated_dir(runtime_dir);
     if (dir_fd < 0) {
         fprintf(stderr,
-                "island-security-context: refusing runtime dir %s: "
+                "housing-security-context: refusing runtime dir %s: "
                 "not an owned, mode-0700, non-symlink directory\n",
                 runtime_dir);
         return 125;
@@ -147,7 +148,7 @@ int main(int argc, char *argv[]) {
                      sock_name);
     if (n < 0 || (size_t)n >= sizeof(sock_path)) {
         fprintf(stderr,
-                "island-security-context: refusing runtime dir %s: "
+                "housing-security-context: refusing runtime dir %s: "
                 "socket path exceeds sun_path\n",
                 runtime_dir);
         return 125;
@@ -228,7 +229,7 @@ int main(int argc, char *argv[]) {
         return exec_fallback(cmd, runtime_dir,
                              "cannot create security context");
     }
-    wp_security_context_v1_set_sandbox_engine(context, "nix-island");
+    wp_security_context_v1_set_sandbox_engine(context, "nix-housing");
     wp_security_context_v1_set_app_id(context, app_id);
     char instance_id[32];
     snprintf(instance_id, sizeof(instance_id), "%d", (int)getpid());
@@ -258,7 +259,7 @@ int main(int argc, char *argv[]) {
     setenv("WAYLAND_DISPLAY", sock_path, 1);
     setenv("XDG_RUNTIME_DIR", runtime_dir, 1);
     execvp(cmd[0], cmd);
-    fprintf(stderr, "island-security-context: exec %s: %s\n", cmd[0],
+    fprintf(stderr, "housing-security-context: exec %s: %s\n", cmd[0],
             strerror(errno));
     return 127;
 }

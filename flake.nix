@@ -1,5 +1,5 @@
 {
-  description = "nix-island — island: data-based sandboxing for nix, with home-manager module provided.";
+  description = "nix-housing — island: data-based sandboxing for nix, with home-manager module provided.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -16,7 +16,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
       in
       {
-        packages.island = pkgs.callPackage ./nix/island-package.nix { };
+        packages.island = pkgs.callPackage ./nix/island/island-package.nix { };
         formatter = pkgs.nixpkgs-fmt;
       }
     ) //

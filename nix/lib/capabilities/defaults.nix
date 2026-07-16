@@ -1,19 +1,19 @@
-{ lib, pkgs, island, config, ... }:
+{ lib, pkgs, house, config, ... }:
 
 let
-  setupWrapper = pkgs.writeShellScript "island-${island.profileName}-setup" ''
+  setupWrapper = pkgs.writeShellScript "house-${house.profileName}-setup" ''
     set -euo pipefail
 
     # TODO: Check permissions on these dirs
-    mkdir -p ${lib.escapeShellArg island.tmpDir}
-    chmod 700 ${lib.escapeShellArg island.tmpDir}
+    mkdir -p ${lib.escapeShellArg house.tmpDir}
+    chmod 700 ${lib.escapeShellArg house.tmpDir}
     export ORIGINAL_TMPDIR="''${TMPDIR:-/tmp}"
-    export TMPDIR=${lib.escapeShellArg island.tmpDir}
+    export TMPDIR=${lib.escapeShellArg house.tmpDir}
 
-    mkdir -p ${lib.escapeShellArg island.runDir}
-    chmod 700 ${lib.escapeShellArg island.runDir}
+    mkdir -p ${lib.escapeShellArg house.runDir}
+    chmod 700 ${lib.escapeShellArg house.runDir}
     export ORIGINAL_XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-}"
-    export XDG_RUNTIME_DIR=${island.runDir}
+    export XDG_RUNTIME_DIR=${house.runDir}
 
     # Landlock doesn't make it easy to allow access to /proc/self, so we get a private /proc and allow that:
     exec ${pkgs.util-linux}/bin/unshare --user --map-current-user --mount --pid --fork --mount-proc -- ${pkgs.tini}/bin/tini -- "$@"
@@ -24,7 +24,7 @@ in
     type = lib.types.bool;
     default = true;
     description = ''
-      Default island capabilites.
+      Default house capabilites.
     '';
   };
 
@@ -53,9 +53,9 @@ in
       "/dev/tty"
       "/dev/pts"
       "/dev/ptmx"
-      island.islandHomeDir
-      island.tmpDir
-      island.runDir
+      house.houseHomeDir
+      house.tmpDir
+      house.runDir
     ];
 
     execWrappers = lib.mkOrder 500 [ "${setupWrapper}" ];

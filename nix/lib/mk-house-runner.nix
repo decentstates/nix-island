@@ -15,7 +15,7 @@ assert lib.assertMsg (lib.all (v: builtins.match "^[A-Za-z_][A-Za-z0-9_]*$" v !=
   "passthroughEnv contains an invalid environment variable name";
 
 let
-  envFilterer = pkgs.writeShellScript "island-${profileName}-shell-filterer" ''
+  envFilterer = pkgs.writeShellScript "house-${profileName}-shell-filterer" ''
       keep=()
       for v in ${toString passthroughEnv}; do
         if [ -n "''${!v+x}" ]; then keep+=("$v=''${!v}"); fi
