@@ -43,5 +43,5 @@ allowed_access = [
 ]
 parent = [
     "/etc",
-    "/proc",
+    "/proc/self",
 ]

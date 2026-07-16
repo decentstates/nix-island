@@ -15,7 +15,8 @@ let
     export ORIGINAL_XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-}"
     export XDG_RUNTIME_DIR=${island.runDir}
 
-    exec "$@"
+    # Landlock doesn't make it easy to allow access to /proc/self, so we get a private /proc and allow that:
+    exec ${pkgs.util-linux}/bin/unshare --user --map-current-user --mount --pid --fork --mount-proc -- ${pkgs.tini}/bin/tini -- "$@"
   '';
 in
 {
@@ -48,6 +49,7 @@ in
     ];
 
     readWritePaths = [
+      "/proc"
       "/dev/tty"
       "/dev/pts"
       "/dev/ptmx"
