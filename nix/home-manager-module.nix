@@ -148,7 +148,10 @@ let
       runner = lib.mkOption {
         type = lib.types.raw;
         readOnly = true;
-        default = housingLib.mkCapabilitiesRunner houseConfig.capabilities;
+        default = housingLib.mkCapabilitiesRunner {
+          houseContext = houseCtx houseConfig;
+          capabilitiesModule = houseConfig.capabilities;
+        };
         description = ''
           The runner pkg.
         '';
@@ -179,7 +182,7 @@ let
             Derivation with `share/applications/*.desktop` entries for every
             desktop entry installed in the house's nested home-manager
             environment, rewritten to launch through the house runner and
-            tagged with `⟦<profileName>⟧` (read-only).
+            tagged with `⟦<houseName>⟧` (read-only).
           '';
         };
       };
@@ -215,7 +218,7 @@ in
         { text = ""; }) cfg.houses;
 
     home.activation = lib.mapAttrs' (_: houseConfig:
-      lib.nameValuePair "house-nested-home-manager-activate-${houseConfig.profileName}"
+      lib.nameValuePair "house-nested-home-manager-activate-${houseConfig.houseName}"
         (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
          ''
            run ${houseConfig.runner}/bin/${houseConfig.runner.name} ${houseConfig.hm.homeManagerConfiguration.activationPackage}/activate

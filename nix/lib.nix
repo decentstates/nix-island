@@ -51,6 +51,6 @@ let
         modules = [capabilitiesModule];
       }).config.execWrappers;
     in
-    composeExecWrappers houseContext.runnerName execWrappers;
+    composeExecWrappers { name = houseContext.runnerName; inherit execWrappers; };
 in
 { inherit mkCapabilities mkCapabilitiesRunner; }

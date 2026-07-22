@@ -13,12 +13,12 @@
     '';
   };
 
-  config = lib.mkIf config.gpu.enable {
-    readExecutePaths = [
+  config = lib.mkIf config.gui.gpu.enable {
+    simple.readExecutePaths = [
       "/run/opengl-driver"
       "/sys"
     ];
 
-    readWritePaths = [ "/dev/dri" ];
+    simple.readWritePaths = [ "/dev/dri" ];
   };
 }

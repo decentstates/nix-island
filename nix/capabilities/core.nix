@@ -39,7 +39,7 @@ in
     };
   };
 
-  execWrappers.dirSetup = lib.entryBefore ["landlock"] ''
+  execWrappers.dirSetup = libDag.entryBefore ["landlock"] ''
     # TODO: Check permissions, don't allow symlinks.
     mkdir -p ${lib.escapeShellArg houseContext.tmpDir}
     chmod 700 ${lib.escapeShellArg houseContext.tmpDir}
@@ -51,7 +51,7 @@ in
     exec "$@"
     '';
 
-  execWrappers.dirEnvVars = lib.entryAfter ["envFilter"] ''
+  execWrappers.dirEnvVars = libDag.entryAfter ["envFilter"] ''
     export HOME="${lib.escapeShellArg houseContext.houseHomeDir}"
     export TMPDIR=${lib.escapeShellArg houseContext.tmpDir}
     export XDG_RUNTIME_DIR=${lib.escapeShellArg houseContext.runDir}
@@ -59,18 +59,18 @@ in
     exec "$@"
     '';
 
-  execWrappers.profile = lib.entryAfter ["dirEnvVars"] ''
+  execWrappers.profile = libDag.entryAfter ["dirEnvVars"] ''
     . /etc/profile
     [ -f "${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh" ] && \
       . "${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh"
     exec "$@"
     '';
 
-  execWrappers.final = lib.entryAfter [ "profile" ] ''
+  execWrappers.final = libDag.entryAfter [ "profile" ] ''
     [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
     '';
 
-  execWrappers.namespacing = lib.entryAfter ["landlock"] ''
+  execWrappers.namespacing = libDag.entryAfter ["landlock"] ''
     # Rudimentary PID namespacing to hide other processes
     # TODO: Find out if landlock can show /proc/self successfully...
     # TODO: LIMITATION: This doesn't hide other /proc files.
@@ -98,6 +98,7 @@ in
       xdgConfigDir = pkgs.linkFarm "xdgConfig" [ 
           {
             name = "island/profiles/${profileName}";
+            path = islandProfile;
           }
         ];
     in

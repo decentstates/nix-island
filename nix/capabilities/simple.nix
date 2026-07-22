@@ -2,7 +2,7 @@
 
 {
   options.simple = {
-    enable = {
+    enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
       description = ''
@@ -131,13 +131,13 @@
               parent = config.simple.readExecutePaths;
           })
           ++
-          (lib.optional (config.simple.readOnlyPaths != [ ]) {
+          (lib.optional (config.simple.readPaths != [ ]) {
               allowed_access = [
                 "read_dir"
                 "read_file"
                 "refer"
                 ];
-              parent = config.simple.readOnlyPaths;
+              parent = config.simple.readPaths;
           });
 
         housingRules = {

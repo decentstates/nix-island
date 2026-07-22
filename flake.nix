@@ -16,7 +16,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
       in
       {
-        packages.island = pkgs.callPackage ./nix/island/package.nix { };
+        packages.island = pkgs.callPackage ./nix/pkgs/island/package.nix { };
         formatter = pkgs.nixpkgs-fmt;
       }
     ) //
