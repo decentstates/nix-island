@@ -9,6 +9,7 @@ let
   tmpDir = h: "/tmp/houses-${config.home.username}/${h.profileName}";
   runDir = h: "/tmp/houses-${config.home.username}/${h.profileName}/run";
 
+  # TODO: Simplify/remove
   houseCtx = h: {
     inherit (h) profileName runnerName houseHomeDir;
     inherit realHomeDir;
