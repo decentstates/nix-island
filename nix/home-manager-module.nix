@@ -1,20 +1,15 @@
-hmArgs@{ config, inputs, lib, pkgs, modulesPath, ... }:
+moduleArgs@{ config, options, inputs, lib, pkgs, modulesPath, ... }:
 
 let
-  cfg = config.housing;
-
   housingLib = import ./lib.nix { inherit pkgs; island = cfg.islandPackage; };
 
-  realHomeDir = config.home.homeDirectory;
+  isHomeManager = options ? home;
 
-  tmpDir = houseName: "/tmp/houses-${config.home.username}/${houseName}";
-  runDir = houseName: "/tmp/houses-${config.home.username}/${houseName}/run";
+  cfg = config.housing;
 
-  # TODO: Simplify/remove
-  # TODO: remove profile name runner name, add just name
-  houseCtx = houseName: houseConfig: {
-    inherit houseName;
+  houseCtx = houseConfig: {
     inherit (houseConfig) 
+      houseName
       runnerName 
 
       username
@@ -27,10 +22,10 @@ let
 
   mkHouseHm = houseConfig: import modulesPath {
     inherit pkgs;
-    check = true;
     # HACK: But should be stable as HM adding extra args is a breaking
     #       change to their API, with nix used namespaces more...
-    extraSpecialArgs = builtins.removeAttrs hmArgs.specialArgs [
+    # TODO: Fix for nixos - move to hm
+    extraSpecialArgs = builtins.removeAttrs moduleArgs.specialArgs [
      "modulesPath" "lib" "osConfig" "osClass"
     ];
     configuration = innerHomeManagerArgs:
@@ -63,18 +58,18 @@ let
       };
   };
 
-  mkDesktopEntries = h: pkgs.runCommand "house-${h.profileName}-desktop-entries" { } ''
-    apps=${h.hm.homeManagerConfiguration.activationPackage}/home-path/share/applications
+  mkDesktopEntries = houseConfig: pkgs.runCommand "house-${houseConfig.houseName}-desktop-entries" { } ''
+    apps=${houseConfig.hm.homeManagerConfiguration.activationPackage}/home-path/share/applications
     mkdir -p "$out/share/applications"
     [ -d "$apps" ] || exit 0
     for entry in "$apps"/*.desktop; do
       [ -e "$entry" ] || continue
       sed \
-        -e 's|^Exec=|Exec=${mkRunner h}/bin/${h.runnerName} |' \
-        -e 's|^\(Name\(\[[^]]*\]\)\{0,1\}=.*\)$|\1 ⟦${h.profileName}⟧|' \
+        -e 's|^Exec=|Exec=${houseConfig.runner}/bin/${houseConfig.runner.name} |' \
+        -e 's|^\(Name\(\[[^]]*\]\)\{0,1\}=.*\)$|\1 ⟦${houseConfig.houseName}⟧|' \
         -e '/^DBusActivatable=/d' \
         -e '/^TryExec=/d' \
-        "$entry" > "$out/share/applications/house-${h.profileName}-$(basename "$entry")"
+        "$entry" > "$out/share/applications/house-${houseConfig.houseName}-$(basename "$entry")"
     done
   '';
 
@@ -82,9 +77,16 @@ let
     {
     # TODO: Add defaultText for these
     options = {
+      houseName = lib.mkOption {
+        type = lib.types.strMatching "[a-zA-Z0-9_-]+";
+        default = name;
+        readOnly = true;
+        description = "House name";
+      };
+
       runnerName = lib.mkOption {
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
-        default =  "house-${houseName}";
+        default =  "house-${houseConfig.houseName}";
         description = "House runner executable name";
       };
 
@@ -103,17 +105,17 @@ let
 
       tmpDir = lib.mkOption {
         type = lib.types.path;
-        default = "/tmp/houses-${cfg.username}/${cfg.houseName}";
+        default = "/tmp/houses-${houseConfig.username}/${houseConfig.houseName}";
         description = "$TMPDIR";
       };
       runDir = lib.mkOption {
         type = lib.types.path;
-        default = "/tmp/houses-${cfg.username}/${cfg.houseName}/run";
+        default = "/tmp/houses-${houseConfig.username}/${houseConfig.houseName}/run";
         description = "$XDG_RUNTIME_DIR";
       };
       houseHomeDir = lib.mkOption {
         type = lib.types.path;
-        default = "${cfg.realHomeDir}/houses/${name}";
+        default = "${houseConfig.realHomeDir}/houses/${houseConfig.houseName}";
         defaultText = lib.literalExpression ''"''${config.home.homeDirectory}/houses/<name>"'';
         description = "The house's home directory.";
       };
@@ -146,7 +148,7 @@ let
       runner = lib.mkOption {
         type = lib.types.raw;
         readOnly = true;
-        default = housinglib.mkCapabilitiesRunner houseConfig.capabilities;
+        default = housingLib.mkCapabilitiesRunner houseConfig.capabilities;
         description = ''
           The runner pkg.
         '';
@@ -194,36 +196,29 @@ in
       description = "The island (Landlock sandboxing tool) package to use.";
     };
     houses = lib.mkOption {
-      # TODO: Assert house name is a reasonable identifier
       type = lib.types.attrsOf (lib.types.submodule houseModule);
       default = { };
-      description = "House sandbox profiles";
+      description = "House configuraiton";
     };
   };
 
-  config = lib.mkIf cfg.enable {
-    assertions = lib.mapAttrsToList (name: h: {
-      assertion = lib.hasPrefix "${realHomeDir}/" h.houseHomeDir;
-      message = ''
-        housing.houses.${name}.houseHomeDir (${h.houseHomeDir}) must be
-        an absolute path beneath the user home (${realHomeDir}).
-      '';
-    }) cfg.houses;
+  # TODO: nixos: housing.users.<user>.houses
 
+  config = lib.mkIf cfg.enable {
     home.packages =
       [ cfg.islandPackage ]
-        ++ lib.mapAttrsToList (_: h: mkRunner h) cfg.houses;
+        ++ lib.mapAttrsToList (_: houseConfig: houseConfig.runner) cfg.houses;
 
-    home.file = lib.mapAttrs' (_: h:
+    home.file = lib.mapAttrs' (_: houseConfig:
       lib.nameValuePair
-        "${lib.removePrefix "${realHomeDir}/" h.houseHomeDir}/.keep"
+        "${lib.removePrefix "${houseConfig.realHomeDir}/" houseConfig.houseHomeDir}/.keep"
         { text = ""; }) cfg.houses;
 
-    home.activation = lib.mapAttrs' (_: h:
-      lib.nameValuePair "house-nested-home-manager-activate-${h.profileName}"
+    home.activation = lib.mapAttrs' (_: houseConfig:
+      lib.nameValuePair "house-nested-home-manager-activate-${houseConfig.profileName}"
         (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
          ''
-           run ${mkRunner h}/bin/${(mkRunner h).name} ${h.hm.homeManagerConfiguration.activationPackage}/activate
+           run ${houseConfig.runner}/bin/${houseConfig.runner.name} ${houseConfig.hm.homeManagerConfiguration.activationPackage}/activate
          ''))) cfg.houses;
   };
 }

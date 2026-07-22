@@ -1,7 +1,7 @@
 { pkgs
 , lib ? pkgs.lib
 # Required for home-manager.lib.dag:
-# TODO: vendor lib.dag
+# TODO: vendor lib.dag?
 , home-manager
 , island ? pkgs.callPackage ./pkgs/island/package.nix { }
 }:
@@ -53,8 +53,4 @@ let
     in
     composeExecWrappers houseContext.runnerName execWrappers;
 in
-{
-  inherit
-    mkCapabilities 
-    mkCapabilitiesRunner;
-}
+{ inherit mkCapabilities mkCapabilitiesRunner; }
