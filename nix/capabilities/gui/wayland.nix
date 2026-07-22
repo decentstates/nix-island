@@ -1,31 +1,22 @@
-{ lib, pkgs, house, config, ... }:
+{ lib, pkgs, houseContext, config, libDag, ... }:
 
 let
-  securityContext = pkgs.callPackage ../../security-context/package.nix { };
-
-  waylandWrapper = pkgs.writeShellScript "house-${house.profileName}-wayland" ''
-    set -euo pipefail
-
-    exec env XDG_RUNTIME_DIR="''${ORIGINAL_XDG_RUNTIME_DIR:-}" \
-      ${securityContext}/bin/housing-security-context \
-      --app-id ${lib.escapeShellArg "house-${house.profileName}"} \
-      --runtime-dir "$XDG_RUNTIME_DIR" \
-      -- "$@"
-  '';
+  cfg = config.gui.wayland;
+  securityContext = pkgs.callPackage ../../pkgs/wayland-security-context/package.nix { };
 in
 {
-  options.wayland.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = false;
-    description = ''
-      Grant basic wayland access.
-    '';
+  options.gui.wayland = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Wayland access via a security-contect.
+      '';
+    };
   };
 
-  config = lib.mkIf config.wayland.enable {
-    dbus.enable = lib.mkDefault true;
-    gpu.enable = lib.mkDefault true;
-
+  config = lib.mkIf cfg.enable {
+    # TODO: This shouldn't be a passthrough env thing but a second exec wrapper on the other side of the envFilter
     # WAYLAND_DISPLAY is rewritten by housing-security-context to the
     # restricted per-launch socket before the env filter runs.
     passthroughEnv = [
@@ -34,6 +25,11 @@ in
       "XCURSOR_SIZE"
     ];
 
-    execWrappers = [ "${waylandWrapper}" ];
+    execWrappers.wayland = libDag.entryBefore ["envFilter" "landlock"] ''
+      exec ${securityContext}/bin/housing-security-context \
+            --app-id ${lib.escapeShellArg "house-${houseContext.profileName}"} \
+            --runtime-dir "$XDG_RUNTIME_DIR" \
+            -- "$@"
+    '';
   };
 }

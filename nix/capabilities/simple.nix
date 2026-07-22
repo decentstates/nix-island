@@ -1,4 +1,4 @@
-{ lib, config, house, pkgs, ... }:
+{ lib, config, houseContext, pkgs, ... }:
 
 {
   options.simple = {
@@ -8,6 +8,9 @@
       description = ''
         Simple configuration.
         Denies all files, networking and other scopes by default.
+
+        Limitations from Landlock config:
+        - No way to specify UDP ports yet.
       '';
     };
 
@@ -24,7 +27,7 @@
     connectTcpPorts = lib.mkOption {
       type = lib.types.listOf lib.types.port;
       default = [ ];
-      description = "TCP ports connectable to inside.";
+      description = "Connectable TCP ports";
     };
 
     readPaths = lib.mkOption {
@@ -93,9 +96,9 @@
         "/dev/pts"
         "/dev/ptmx"
 
-        house.houseHomeDir
-        house.tmpDir
-        house.runDir
+        houseContext.houseHomeDir
+        houseContext.tmpDir
+        houseContext.runDir
       ];
       description = "Hierarchies read/writable inside.";
     };

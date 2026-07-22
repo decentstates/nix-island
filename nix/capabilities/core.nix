@@ -1,4 +1,4 @@
-{ lib, pkgs, island, house, config, libDag, dagOfType, ... }:
+{ lib, pkgs, island, houseContext, config, libDag, dagOfType, ... }:
 let
   tomlFormat = pkgs.formats.toml { };
 in
@@ -41,20 +41,20 @@ in
 
   execWrappers.dirSetup = lib.entryBefore ["landlock"] ''
     # TODO: Check permissions, don't allow symlinks.
-    mkdir -p ${lib.escapeShellArg house.tmpDir}
-    chmod 700 ${lib.escapeShellArg house.tmpDir}
+    mkdir -p ${lib.escapeShellArg houseContext.tmpDir}
+    chmod 700 ${lib.escapeShellArg houseContext.tmpDir}
 
     # TODO: Check permissions, don't allow symlinks.
-    mkdir -p ${lib.escapeShellArg house.runDir}
-    chmod 700 ${lib.escapeShellArg house.runDir}
+    mkdir -p ${lib.escapeShellArg houseContext.runDir}
+    chmod 700 ${lib.escapeShellArg houseContext.runDir}
     
     exec "$@"
     '';
 
-  execWrappers.dirEnvVars = lib.entryAfter ["env-filter"] ''
-    export HOME="${lib.escapeShellArg house.houseHomeDir}"
-    export TMPDIR=${lib.escapeShellArg house.tmpDir}
-    export XDG_RUNTIME_DIR=${lib.escapeShellArg house.runDir}
+  execWrappers.dirEnvVars = lib.entryAfter ["envFilter"] ''
+    export HOME="${lib.escapeShellArg houseContext.houseHomeDir}"
+    export TMPDIR=${lib.escapeShellArg houseContext.tmpDir}
+    export XDG_RUNTIME_DIR=${lib.escapeShellArg houseContext.runDir}
 
     exec "$@"
     '';

@@ -2,60 +2,30 @@ hmArgs@{ config, inputs, lib, pkgs, modulesPath, ... }:
 
 let
   cfg = config.housing;
+
   housingLib = import ./lib.nix { inherit pkgs; island = cfg.islandPackage; };
 
   realHomeDir = config.home.homeDirectory;
 
-  tmpDir = h: "/tmp/houses-${config.home.username}/${h.profileName}";
-  runDir = h: "/tmp/houses-${config.home.username}/${h.profileName}/run";
+  tmpDir = houseName: "/tmp/houses-${config.home.username}/${houseName}";
+  runDir = houseName: "/tmp/houses-${config.home.username}/${houseName}/run";
 
   # TODO: Simplify/remove
   # TODO: remove profile name runner name, add just name
-  houseCtx = h: {
-    inherit (h) profileName runnerName houseHomeDir;
-    inherit realHomeDir;
-    tmpDir = tmpDir h;
-    runDir = runDir h;
-    username = config.home.username;
+  houseCtx = houseName: houseConfig: {
+    inherit houseName;
+    inherit (houseConfig) 
+      runnerName 
+
+      username
+      realHomeDir
+
+      tmpDir
+      runDir
+      houseHomeDir;
   };
 
-  # Obselete
-  mkRunner = h:
-    let
-      inner = pkgs.writeShellScript "activate" ''
-        set -e
-
-        # Bootstrapping the env vars
-        export HOME="${h.houseHomeDir}"
-        export TMPDIR="${tmpDir h}"
-        # Required for the sourcing below to correcly find the nix-profile:
-        export XDG_STATE_HOME="${h.houseHomeDir}/.local/state"
-
-        . /etc/profile
-        . ${h.hm.homeManagerConfiguration.activationPackage}/home-path/etc/profile.d/hm-session-vars.sh
-
-        [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
-      '';
-      capabilitiesRunner = housingLib.mkCapabilitiesRunner {
-        house = houseCtx h;
-        capabilitiesModule = h.capabilities;
-      };
-    in
-    pkgs.writeShellApplication {
-      name = h.runnerName;
-      text = ''
-        exec ${capabilitiesRunner}/bin/${h.runnerName} ${inner} "$@"
-      '';
-    };
-
-  mkProfile = h: housingLib.mkHouseProfile {
-    inherit (h) profileName;
-    inherit (h.capabilityConfig)
-      readExecutePaths readWritePaths
-      bindTcpPorts connectTcpPorts;
-  };
-
-  mkHouseHm = h: import modulesPath {
+  mkHouseHm = houseConfig: import modulesPath {
     inherit pkgs;
     check = true;
     # HACK: But should be stable as HM adding extra args is a breaking
@@ -68,16 +38,17 @@ let
         innerConfig = innerHomeManagerArgs.config;
       in
       {
-        imports = h.modules;
+        imports = houseConfig.modules;
         home = {
-          inherit (config.home) username stateVersion;
-          homeDirectory = h.houseHomeDir;
+          inherit (config.home) stateVersion;
+          inherit (houseConfig) username;
+          homeDirectory = houseConfig.houseHomeDir;
           sessionVariables = {
             HOME = innerConfig.home.homeDirectory;
-            TMPDIR = (tmpDir h);
-            HOUSE_NAME = h.profileName;
+            TMPDIR = houseConfig.tmpDir;
+            HOUSE_NAME = houseConfig.houseName;
             # Used directly in Fish shell, added into other shells below:
-            SHELL_PROMPT_PREFIX = "⟦${h.profileName}⟧ ";
+            SHELL_PROMPT_PREFIX = "⟦${houseConfig.houseName}⟧ ";
           };
         };
         programs.bash.initExtra = lib.mkAfter ''
@@ -107,45 +78,57 @@ let
     done
   '';
 
-  houseModule = { name, config, ... }:
-    let
-      h = config;
-    in
+  houseModule = { name, houseConfig, ... }:
     {
+    # TODO: Add defaultText for these
     options = {
-      profileName = lib.mkOption {
-        type = lib.types.strMatching "[a-zA-Z0-9_-]+";
-        default =  "${name}";
-        description = "House profile name";
-      };
       runnerName = lib.mkOption {
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
-        default =  "house-${name}";
+        default =  "house-${houseName}";
         description = "House runner executable name";
       };
+
+      # TODO make home-manager/nixos agnostic, use null if not avail and throw an assertion.
+      username = lib.mkOption {
+        type = lib.types.strMatching "[a-zA-Z0-9_-]+";
+        default = config.home.username;
+        description = "Owner of the house";
+      };
+      realHomeDir = lib.mkOption {
+        type = lib.types.path;
+        default = config.home.homeDirectory;
+        defaultText = lib.literalExpression ''"''${config.home.homeDirectory}"'';
+        description = "The user's real home.";
+      };
+
+      tmpDir = lib.mkOption {
+        type = lib.types.path;
+        default = "/tmp/houses-${cfg.username}/${cfg.houseName}";
+        description = "$TMPDIR";
+      };
+      runDir = lib.mkOption {
+        type = lib.types.path;
+        default = "/tmp/houses-${cfg.username}/${cfg.houseName}/run";
+        description = "$XDG_RUNTIME_DIR";
+      };
       houseHomeDir = lib.mkOption {
-        type = lib.types.str;
-        default = "${realHomeDir}/houses/${name}";
+        type = lib.types.path;
+        default = "${cfg.realHomeDir}/houses/${name}";
         defaultText = lib.literalExpression ''"''${config.home.homeDirectory}/houses/<name>"'';
-        description = "The house's home directory (absolute, beneath the user home).";
+        description = "The house's home directory.";
       };
-      modules = lib.mkOption {
-        type = lib.types.listOf lib.types.deferredModule;
-        default = [ ];
-        description = "The house's home-manager modules.";
-      };
+
       capabilities = lib.mkOption {
         type = lib.types.deferredModule;
         default = { };
         description = ''
           a separate modules system.
 
-          The actual config used:
-          `passthroughEnv`, `execWrappers`,
-          `bindTcpPorts`, `connectTcpPorts`, `readExecutePaths` and
-          `readWritePaths`
+          builds a series of execWrapper (type: dagOf).
 
           You might want:
+          `simple.connectTcpPorts = [80, 443]`
+          `simple.bindTcpPorts = [0]`
           `waylands.enable = true`
 
           Can use `imports = []` to provide your own capabilities modules:
@@ -155,28 +138,30 @@ let
 
           Where house is:
           ```
-          { profileName, runnerName, houseHomeDir, tmpDir, runDir, realHomeDir, username }
+          { runnerName, houseHomeDir, tmpDir, runDir, realHomeDir, username }
           ```
         '';
       };
-      capabilityConfig = lib.mkOption {
+
+      runner = lib.mkOption {
         type = lib.types.raw;
         readOnly = true;
-        default = (housingLib.evalCapabilities {
-          house = houseCtx h;
-          module = h.capabilities;
-        }).config;
-        defaultText = lib.literalMD "the evaluated capability configuration of this house";
+        default = housinglib.mkCapabilitiesRunner houseConfig.capabilities;
         description = ''
-          The house's evaluated capability configuration (read-only),
-          e.g. `.readWritePaths`, `.execWrappers`.
+          The runner pkg.
         '';
       };
+
       hm = {
+        modules = lib.mkOption {
+          type = lib.types.listOf lib.types.deferredModule;
+          default = [ ];
+          description = "The house's home-manager modules.";
+        };
         homeManagerConfiguration = lib.mkOption {
           type = lib.types.raw;
           readOnly = true;
-          default = mkHouseHm h;
+          default = mkHouseHm houseConfig;
           defaultText = lib.literalMD "the evaluated nested home-manager configuration of this house";
           description = ''
             The house's evaluated nested home-manager configuration
@@ -186,7 +171,7 @@ let
         desktopEntries = lib.mkOption {
           type = lib.types.package;
           readOnly = true;
-          default = mkDesktopEntries h;
+          default = mkDesktopEntries houseConfig;
           defaultText = lib.literalMD "generated desktop entries for this house's applications";
           description = ''
             Derivation with `share/applications/*.desktop` entries for every
@@ -204,11 +189,12 @@ in
     enable = lib.mkEnableOption "Enable housing.";
     islandPackage = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ./island/island-package.nix { };
-      defaultText = lib.literalExpression "pkgs.callPackage ./island/island-package.nix { }";
+      default = pkgs.callPackage ./pkgs/island/package.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ./pkgs/island/package.nix { }";
       description = "The island (Landlock sandboxing tool) package to use.";
     };
     houses = lib.mkOption {
+      # TODO: Assert house name is a reasonable identifier
       type = lib.types.attrsOf (lib.types.submodule houseModule);
       default = { };
       description = "House sandbox profiles";

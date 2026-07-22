@@ -7,7 +7,7 @@
 }:
 
 stdenv.mkDerivation {
-  pname = "housing-security-context";
+  pname = "wayland-security-context";
   version = "0.1.0";
 
   src = ./.;
@@ -23,23 +23,23 @@ stdenv.mkDerivation {
     wayland-scanner private-code "$xml" security-context-v1-protocol.c
 
     $CC -O2 -Wall -Wextra \
-      housing-security-context.c security-context-v1-protocol.c \
+      wayland-security-context.c security-context-v1-protocol.c \
       $(pkg-config --cflags --libs wayland-client) \
-      -o housing-security-context
+      -o wayland-security-context
 
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
-    install -Dm555 housing-security-context $out/bin/housing-security-context
+    install -Dm555 wayland-security-context $out/bin/wayland-security-context
     runHook postInstall
   '';
 
   meta = {
-    description = "Wayland security-context-v1 wrapper for nix-housing launches";
+    description = "Wayland security-context-v1 wrapper";
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;
-    mainProgram = "housing-security-context";
+    mainProgram = "wayland-security-context";
   };
 }

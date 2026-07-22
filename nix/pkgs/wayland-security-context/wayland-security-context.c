@@ -1,9 +1,9 @@
 // TODO: REVIEW
-// housing-security-context: attach a Wayland security context to a sandboxed
+// wayland-security-context: attach a Wayland security context to a sandboxed
 // launch.
 //
 // Usage:
-//   housing-security-context --app-id ID --runtime-dir DIR -- CMD [ARGS...]
+//   wayland-security-context --app-id ID --runtime-dir DIR -- CMD [ARGS...]
 //
 // Connects to the compositor via the *current* environment, asks
 // wp_security_context_manager_v1 for a restricted listening socket at
@@ -91,19 +91,19 @@ static int open_validated_dir(const char *dir) {
 static int exec_fallback(char **cmd, const char *runtime_dir,
                          const char *why) {
     fprintf(stderr,
-            "housing-security-context: %s; running without Wayland access\n",
+            "wayland-security-context: %s; running without Wayland access\n",
             why);
     unsetenv("WAYLAND_DISPLAY");
     setenv("XDG_RUNTIME_DIR", runtime_dir, 1);
     execvp(cmd[0], cmd);
-    fprintf(stderr, "housing-security-context: exec %s: %s\n", cmd[0],
+    fprintf(stderr, "wayland-security-context: exec %s: %s\n", cmd[0],
             strerror(errno));
     return 127;
 }
 
 static int usage(void) {
     fprintf(stderr,
-            "usage: housing-security-context --app-id ID --runtime-dir DIR "
+            "usage: wayland-security-context --app-id ID --runtime-dir DIR "
             "-- CMD [ARGS...]\n");
     return 127;
 }
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
     int dir_fd = open_validated_dir(runtime_dir);
     if (dir_fd < 0) {
         fprintf(stderr,
-                "housing-security-context: refusing runtime dir %s: "
+                "wayland-security-context: refusing runtime dir %s: "
                 "not an owned, mode-0700, non-symlink directory\n",
                 runtime_dir);
         return 125;
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
                      sock_name);
     if (n < 0 || (size_t)n >= sizeof(sock_path)) {
         fprintf(stderr,
-                "housing-security-context: refusing runtime dir %s: "
+                "wayland-security-context: refusing runtime dir %s: "
                 "socket path exceeds sun_path\n",
                 runtime_dir);
         return 125;
@@ -259,7 +259,7 @@ int main(int argc, char *argv[]) {
     setenv("WAYLAND_DISPLAY", sock_path, 1);
     setenv("XDG_RUNTIME_DIR", runtime_dir, 1);
     execvp(cmd[0], cmd);
-    fprintf(stderr, "housing-security-context: exec %s: %s\n", cmd[0],
+    fprintf(stderr, "wayland-security-context: exec %s: %s\n", cmd[0],
             strerror(errno));
     return 127;
 }

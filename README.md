@@ -114,7 +114,7 @@ These are the actual options:
   for setting up proxy sockets.
 - `bindTcpPorts`
 - `connectTcpPorts`
-- `readOnlyPaths`
+- `readExecutePaths`
 - `readWritePaths`
 
 On top of these you might want to use `capabilites.wayland.enable`.
