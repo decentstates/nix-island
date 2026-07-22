@@ -2,15 +2,6 @@
 
 {
   options = {
-    passthroughEnv = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
-      description = ''
-        Environment variables preserved across the house boundary; everything
-        else is stripped by the runner's env filter.
-      '';
-    };
-
     execWrappers = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -23,6 +14,15 @@
 
         Wrappers run *outside* the sandbox. Order across capabilities with
         `lib.mkOrder` (the defaults setup wrapper sits at 500).
+      '';
+    };
+
+    passthroughEnv = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = ''
+        Environment variables preserved across the house boundary; everything
+        else is stripped by the runner's env filter.
       '';
     };
 
