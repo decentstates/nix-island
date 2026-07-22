@@ -225,8 +225,6 @@ in
       [ cfg.islandPackage ]
         ++ lib.mapAttrsToList (_: h: mkRunner h) cfg.houses;
 
-    # NOTE: "island/profiles" is the upstream island CLI's profile lookup
-    # path (~/.config/island/profiles/<name>); it is not ours to rename.
     xdg.configFile = lib.mapAttrs' (_: h:
       lib.nameValuePair "island/profiles/${h.profileName}" {
         source = mkProfile h;
@@ -242,15 +240,6 @@ in
       lib.nameValuePair "house-nested-home-manager-activate-${h.profileName}"
         (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
          ''
-           if [ -e "$HOME/.nix-profile" ] && [ -z "$HAS_WARNED_ABOUT_NIX_PROFILE" ]; then
-               warnEcho "nix-housing: WARNING: ~/.nix-profile exists."
-               warnEcho "nix-housing: Home-manager now stores profiles under XDG dirs allowing isolation."
-               warnEcho "nix-housing: You still have the legacy profile link, this will prevent environment isolation."
-               warnEcho "nix-housing: It should be safe to delete it AFAIK:"
-               warnEcho "nix-housing:    rm ~/.nix-profile"
-               HAS_WARNED_ABOUT_NIX_PROFILE="true"
-           fi
-
            run ${mkRunner h}/bin/${(mkRunner h).name} ${h.hm.homeManagerConfiguration.activationPackage}/activate
          ''))) cfg.houses;
   };
