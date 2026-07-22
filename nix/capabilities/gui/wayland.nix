@@ -19,7 +19,7 @@ in
     # TODO: This shouldn't be a passthrough env thing but a second exec wrapper on the other side of the envFilter
     # WAYLAND_DISPLAY is rewritten by wayland-security-context to the
     # restricted per-launch socket before the env filter runs.
-    passthroughEnv = [
+    envPassthrough = [
       "WAYLAND_DISPLAY"
       "XCURSOR_THEME"
       "XCURSOR_SIZE"

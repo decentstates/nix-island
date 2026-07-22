@@ -36,7 +36,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    passthroughEnv = [ "DBUS_SESSION_BUS_ADDRESS" ];
+    envPassthrough = [ "DBUS_SESSION_BUS_ADDRESS" ];
     simple.readWritePaths = [ proxySocket ];
 
     execWrappers.dbusProxy = libDag.entryBefore ["envFilter" "landlock"] ''

@@ -1,4 +1,3 @@
-// TODO: REVIEW
 // wayland-security-context: attach a Wayland security context to a sandboxed
 // launch.
 //

@@ -75,11 +75,11 @@ let
 
   houseModule = { name, houseConfig, ... }:
     {
-    # TODO: Add defaultText for these
     options = {
       houseName = lib.mkOption {
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
         default = name;
+        defaultText = lib.literalMD "the house's attribute name";
         readOnly = true;
         description = "House name";
       };
@@ -87,32 +87,40 @@ let
       runnerName = lib.mkOption {
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
         default =  "house-${houseConfig.houseName}";
+        defaultText = lib.literalExpression ''"house-''${houseName}"'';
         description = "House runner executable name";
       };
 
-      # TODO make home-manager/nixos agnostic, use null if not avail and throw an assertion.
       username = lib.mkOption {
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
-        default = config.home.username;
+        default =
+          if isHomeManager then config.home.username
+          else throw "housing.houses.${name}.username must be set outside home-manager";
+        defaultText = lib.literalExpression "config.home.username";
         description = "Owner of the house";
       };
       realHomeDir = lib.mkOption {
         type = lib.types.path;
-        default = config.home.homeDirectory;
-        defaultText = lib.literalExpression ''"''${config.home.homeDirectory}"'';
+        default =
+          if isHomeManager then config.home.homeDirectory
+          else throw "housing.houses.${name}.realHomeDir must be set outside home-manager";
+        defaultText = lib.literalExpression "config.home.homeDirectory";
         description = "The user's real home.";
       };
 
       tmpDir = lib.mkOption {
         type = lib.types.path;
         default = "/tmp/houses-${houseConfig.username}/${houseConfig.houseName}";
+        defaultText = lib.literalExpression ''"/tmp/houses-''${username}/''${houseName}"'';
         description = "$TMPDIR";
       };
       runDir = lib.mkOption {
         type = lib.types.path;
         default = "/tmp/houses-${houseConfig.username}/${houseConfig.houseName}/run";
+        defaultText = lib.literalExpression ''"/tmp/houses-''${username}/''${houseName}/run"'';
         description = "$XDG_RUNTIME_DIR";
       };
+
       houseHomeDir = lib.mkOption {
         type = lib.types.path;
         default = "${houseConfig.realHomeDir}/houses/${houseConfig.houseName}";

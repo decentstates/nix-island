@@ -4,7 +4,6 @@ let
 in
 {
   options = {
-    # TODO: Add assertion that the last line contains exec and "$@" maybe
     execWrappers = lib.mkOption {
       type = dagOfType lib.types.string;
       default = [];
@@ -21,8 +20,7 @@ in
       '';
     };
 
-    # TODO: Rename to envVarPassthrough or better
-    passthroughEnv = lib.mkOption {
+    envPassthrough = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [];
       description = ''
@@ -40,14 +38,27 @@ in
   };
 
   execWrappers.dirSetup = libDag.entryBefore ["landlock"] ''
-    # TODO: Check permissions, don't allow symlinks.
-    mkdir -p ${lib.escapeShellArg houseContext.tmpDir}
-    chmod 700 ${lib.escapeShellArg houseContext.tmpDir}
+    set -eu
 
-    # TODO: Check permissions, don't allow symlinks.
-    mkdir -p ${lib.escapeShellArg houseContext.runDir}
-    chmod 700 ${lib.escapeShellArg houseContext.runDir}
-    
+    # Create the house's private dirs, refusing to follow a pre-planted
+    # symlink and requiring we own the final directory (mode 700).
+    ensure_dir() {
+      d=$1
+      if [ -L "$d" ]; then
+        echo "housing: refusing $d: is a symlink" >&2
+        exit 1
+      fi
+      mkdir -p "$d"
+      if [ "$(${pkgs.coreutils}/bin/stat -c %u "$d")" != "$(${pkgs.coreutils}/bin/id -u)" ]; then
+        echo "housing: refusing $d: not owned by the current user" >&2
+        exit 1
+      fi
+      chmod 700 "$d"
+    }
+
+    ensure_dir ${lib.escapeShellArg houseContext.tmpDir}
+    ensure_dir ${lib.escapeShellArg houseContext.runDir}
+
     exec "$@"
     '';
 
@@ -113,7 +124,7 @@ in
           "''${restore[@]}" "$@"
       '';
 
-  passthroughEnv = [
+  envPassthrough = [
     "TERM"
     "COLORTERM"
     "LC_ALL"
@@ -123,11 +134,11 @@ in
   ];
 
   execWrappers.envFilter = (
-    assert lib.assertMsg (lib.all (v: builtins.match "^[A-Za-z_][A-Za-z0-9_]*$" v != null) config.passthroughEnv)
-      "passthroughEnv contains an invalid environment variable name";
+    assert lib.assertMsg (lib.all (v: builtins.match "^[A-Za-z_][A-Za-z0-9_]*$" v != null) config.envPassthrough)
+      "envPassthrough contains an invalid environment variable name";
     libDag.entryAfter ["landlock"] ''
       keep=()
-      for v in ${toString config.passthroughEnv}; do
+      for v in ${toString config.envPassthrough}; do
         if [ -n "''${!v+x}" ]; then 
           keep+=("$v=''${!v}"); 
         fi

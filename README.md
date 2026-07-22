@@ -105,11 +105,12 @@ home-manager but in the house's home-manager.
 This attribute set specifies what a house has access to.
 This is generally a white listing system.
 
-Set `capabilites.defaults.enable = false` to disable the defaults.
-(TODO: Some defaults aren't moved to defaults yet.)
+The `simple` capability provides sensible default filesystem and network
+allow-lists and is enabled by default; set `simple.enable = false` to start
+from an empty sandbox and grant everything explicitly.
 
 These are the actual options:
-- `passthroughEnv` What env vars to pass through to the sandbox.
+- `envPassthrough` What env vars to pass through to the sandbox.
 - `execWrappers` You can wrap the runner to run code before the sandbox, useful
   for setting up proxy sockets.
 - `bindTcpPorts`
@@ -128,7 +129,7 @@ let
     readWritePaths = [
       osConfig.environment.sessionVariables.USER_PERSISTENT_DIR
     ];
-    passthroughEnv = [
+    envPassthrough = [
       "USER_PERSISTENT_DIR"
     ];
   };

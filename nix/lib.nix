@@ -22,12 +22,23 @@ let
     };
   composeExecWrappers = { name, execWrappers }:
     let
+      sorted = home-manager.lib.hm.dag.topoSort execWrappers;
+      ordered =
+        if sorted ? result then sorted.result
+        else throw "composeExecWrappers: execWrappers '${name}' contain a dependency cycle";
+      # Each wrapper must hand off to the next command; a wrapper that forgets
+      # to `exec ... "$@"` would silently drop the rest of the chain.
+      checkHandoff = entry:
+        lib.assertMsg (lib.hasInfix "exec" entry.data && lib.hasInfix ''"$@"'' entry.data)
+          "execWrapper '${entry.name}' must exec the next command (needs `exec` and `\"$@\"`)";
       execWrappersD =
         pkgs.symlinkJoin {
           name = "exec-wrappers.d";
           paths = lib.imap0
-            (i: { name, data }: pkgs.writeShellScriptBin "${lib.fixedWidthNumber 3 i}-${name}" data) 
-            (home-manager.lib.hm.dag.topoSort execWrappers);
+            (i: entry:
+              assert checkHandoff entry;
+              pkgs.writeShellScriptBin "${lib.fixedWidthNumber 3 i}-${entry.name}" entry.data)
+            ordered;
         };
     in
     pkgs.writeShellApplication {
