@@ -12,7 +12,7 @@
   };
 
   config = lib.mkIf config.gpu.enable {
-    readOnlyPaths = [
+    readExecutePaths = [
       # Mesa: driver lookup (usually a /nix/store symlink; kept explicit
       # for non-symlink setups) and PCI device probing under /sys.
       "/run/opengl-driver"

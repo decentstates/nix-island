@@ -1,11 +1,19 @@
 { pkgs
 , lib ? pkgs.lib
+# Required for home-manager.lib.dag:
+# TODO: vendor lib.dag
+, home-manager
 , island ? pkgs.callPackage ./island/island-package.nix { }
 }:
 let
+  libDag = home-manager.lib.hm.dag;
+  dagOfType = home-manager.lib.hm.types.dagOf;
   mkCapabilities = { house, module ? { } }:
     lib.evalModules {
-      specialArgs = { inherit pkgs house; };
+      # TODO extraSpecialArgs...
+      specialArgs = { 
+        inherit pkgs island house libDag dagOfType;
+      };
       modules = [
         ./capabilities/schema.nix
         ./capabilities/defaults.nix
@@ -13,6 +21,17 @@ let
         ./capabilities/gpu.nix
         ./capabilities/wayland.nix
       ] ++ [ module ];
+    };
+  mkExecWrapperApplication = { name, execWrappers }:
+    let
+      execWrappersD = "";
+    in
+    pkgs.writeShellApplication {
+      inherit name;
+      text = ''
+        exec ${toString capabilityConfig.execWrappers} \
+          ${houseRunner}/bin/${houseRunner.name} "$@"
+      '';
     };
   mkCapabilitiesRunner = { house , capabilitiesModule ? { } }:
     let
@@ -30,12 +49,12 @@ let
       name = house.runnerName;
       text = ''
         exec ${toString capabilityConfig.execWrappers} \
-          ${houseRunner}/bin/${house.runnerName} "$@"
+          ${houseRunner}/bin/${houseRunner.name} "$@"
       '';
     };
   mkHouseProfile = 
     { profileName
-    , readOnlyPaths ? [ ]
+    , readExecutePaths ? [ ]
     , readWritePaths ? [ ]
     , bindTcpPorts ? [ ] 
     , connectTcpPorts ? [ ]
@@ -62,9 +81,9 @@ let
             parent = readWritePaths;
         })
         ++
-        (lib.optional (readOnlyPaths != [ ]) {
+        (lib.optional (readExecutePaths != [ ]) {
             allowed_access = [ "abi.read_execute" ];
-            parent = readOnlyPaths;
+            parent = readExecutePaths;
         });
 
       housingRules = {
@@ -91,6 +110,7 @@ let
       '';
     in 
       houseProfile;
+  # obsolete
   mkHouseRunner =
     { runnerName
     , profileName

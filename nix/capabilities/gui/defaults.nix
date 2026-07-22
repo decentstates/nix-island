@@ -1,5 +1,6 @@
 { lib, pkgs, house, config, ... }:
 
+# obsolete
 let
   setupWrapper = pkgs.writeShellScript "house-${house.profileName}-setup" ''
     set -euo pipefail

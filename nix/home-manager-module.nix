@@ -10,6 +10,7 @@ let
   runDir = h: "/tmp/houses-${config.home.username}/${h.profileName}/run";
 
   # TODO: Simplify/remove
+  # TODO: remove profile name runner name, add just name
   houseCtx = h: {
     inherit (h) profileName runnerName houseHomeDir;
     inherit realHomeDir;
@@ -18,6 +19,7 @@ let
     username = config.home.username;
   };
 
+  # Obselete
   mkRunner = h:
     let
       inner = pkgs.writeShellScript "activate" ''
@@ -49,7 +51,7 @@ let
   mkProfile = h: housingLib.mkHouseProfile {
     inherit (h) profileName;
     inherit (h.capabilityConfig)
-      readOnlyPaths readWritePaths
+      readExecutePaths readWritePaths
       bindTcpPorts connectTcpPorts;
   };
 
@@ -140,7 +142,7 @@ let
 
           The actual config used:
           `passthroughEnv`, `execWrappers`,
-          `bindTcpPorts`, `connectTcpPorts`, `readOnlyPaths` and
+          `bindTcpPorts`, `connectTcpPorts`, `readExecutePaths` and
           `readWritePaths`
 
           You might want:
@@ -225,12 +227,6 @@ in
     home.packages =
       [ cfg.islandPackage ]
         ++ lib.mapAttrsToList (_: h: mkRunner h) cfg.houses;
-
-    xdg.configFile = lib.mapAttrs' (_: h:
-      lib.nameValuePair "island/profiles/${h.profileName}" {
-        source = mkProfile h;
-        recursive = true;
-      }) cfg.houses;
 
     home.file = lib.mapAttrs' (_: h:
       lib.nameValuePair

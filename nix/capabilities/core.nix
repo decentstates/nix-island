@@ -60,13 +60,21 @@ in
     '';
 
   execWrappers.profile = lib.entryAfter ["dirEnvVars"] ''
-  . /etc/profile
-  [ -f "${XDG_STATE_DIR:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh" ] && \
-    . "${XDG_STATE_DIR:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh"
-  '';
+    . /etc/profile
+    [ -f "${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh" ] && \
+      . "${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh"
+    exec "$@"
+    '';
 
   execWrappers.final = lib.entryAfter [ "profile" ] ''
-  [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
+    [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
+    '';
+
+  execWrappers.namespacing = lib.entryAfter ["landlock"] ''
+    # Rudimentary PID namespacing to hide other processes
+    # TODO: Find out if landlock can show /proc/self successfully...
+    # TODO: LIMITATION: This doesn't hide other /proc files.
+    exec ${pkgs.util-linux}/bin/unshare --user --map-current-user --mount --pid --fork --mount-proc -- ${pkgs.tini}/bin/tini -- "$@"
   '';
   
 
@@ -113,13 +121,17 @@ in
     "LOGNAME"
   ];
 
-  execWrappers.envFilter = libDag.entryAfter ["landlock"] ''
-    keep=()
-    for v in ${toString config.passthroughEnv}; do
-      if [ -n "''${!v+x}" ]; then 
-        keep+=("$v=''${!v}"); 
-      fi
-    done
-    exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}"  "$@"
-    '';
+  execWrappers.envFilter = (
+    assert lib.assertMsg (lib.all (v: builtins.match "^[A-Za-z_][A-Za-z0-9_]*$" v != null) config.passthroughEnv)
+      "passthroughEnv contains an invalid environment variable name";
+    libDag.entryAfter ["landlock"] ''
+      keep=()
+      for v in ${toString config.passthroughEnv}; do
+        if [ -n "''${!v+x}" ]; then 
+          keep+=("$v=''${!v}"); 
+        fi
+      done
+      exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}"  "$@"
+      ''
+  );
 }
