@@ -114,23 +114,18 @@ in
     execWrappers.landlock =
       let
         profileName = "the-profile";
-        islandProfile = pkgs.linkFarm "islandProfile" (
-              [{ 
-                  name = "profile.toml"; 
-                  path = tomlFormat.generate "profile.toml" {
-                    workspace = false;
-                    context = [];
-                  };
-              }]
-              ++ pkgs.lib.mapAttrsToList (n: p: { name = "landlock/${n}.toml"; path = p; }) config.landlockConfigs
-            );
-
-        xdgConfigDir = pkgs.linkFarm "xdgConfig" [ 
-            {
-              name = "island/profiles/${profileName}";
-              path = islandProfile;
-            }
-          ];
+        profileToml = tomlFormat.generate "profile.toml" {
+          workspace = false;
+          context = [];
+        };
+        profileDir = "island/profiles/${profileName}";
+        xdgConfigDir = pkgs.runCommand "xdgConfig" { } (''
+          mkdir -p "$out/${profileDir}"
+          cp ${profileToml} "$out/${profileDir}/profile.toml"
+        '' + lib.concatStrings (lib.mapAttrsToList (n: p: ''
+          mkdir -p "$out/${profileDir}/landlock"
+          cp ${p} "$out/${profileDir}/landlock/${n}.toml"
+        '') config.landlockConfigs));
       in
       libDag.entryAnywhere ''
           # temporarily set XDG_CONFIG_HOME for the island profile we've created.
