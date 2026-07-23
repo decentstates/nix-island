@@ -1,7 +1,11 @@
 moduleArgs@{ config, options, inputs, lib, pkgs, modulesPath, ... }:
 
 let
-  housingLib = import ./lib.nix { inherit pkgs; island = cfg.islandPackage; };
+  housingLib = import ./lib.nix { 
+    inherit pkgs; 
+    inherit (inputs) home-manager; 
+    island = cfg.islandPackage; 
+    };
 
   isHomeManager = options ? home;
 
@@ -33,13 +37,13 @@ let
         innerConfig = innerHomeManagerArgs.config;
       in
       {
-        imports = houseConfig.modules;
+        imports = houseConfig.hm.modules;
         home = {
           inherit (config.home) stateVersion;
           inherit (houseConfig) username;
           homeDirectory = houseConfig.houseHomeDir;
           sessionVariables = {
-            HOME = innerConfig.home.homeDirectory;
+            HOME = houseConfig.houseHomeDirectory;
             TMPDIR = houseConfig.tmpDir;
             HOUSE_NAME = houseConfig.houseName;
             # Used directly in Fish shell, added into other shells below:
@@ -52,9 +56,6 @@ let
         programs.zsh.initContent = lib.mkOrder 1500 ''
           PROMPT="$SHELL_PROMPT_PREFIX$PROMPT"
         '';
-        xdg = {
-          enable = true;
-        };
       };
   };
 
@@ -73,7 +74,15 @@ let
     done
   '';
 
-  houseModule = { name, houseConfig, ... }:
+  houseModule = 
+  let
+    outerConfig = config;
+  in
+  { name, config, ... }:
+    let
+      houseConfig = config;
+      config = outerConfig;
+    in
     {
     options = {
       houseName = lib.mkOption {
@@ -221,17 +230,13 @@ in
   config = lib.mkIf cfg.enable {
     home.packages =
       [ cfg.islandPackage ]
-        ++ lib.mapAttrsToList (_: houseConfig: houseConfig.runner) cfg.houses;
+        ++ lib.mapAttrsToList (_houseName: houseConfig: houseConfig.runner) cfg.houses;
 
-    home.file = lib.mapAttrs' (_: houseConfig:
-      lib.nameValuePair
-        "${lib.removePrefix "${houseConfig.realHomeDir}/" houseConfig.houseHomeDir}/.keep"
-        { text = ""; }) cfg.houses;
-
-    home.activation = lib.mapAttrs' (_: houseConfig:
+    home.activation = lib.mapAttrs' (_houseName: houseConfig:
       lib.nameValuePair "house-nested-home-manager-activate-${houseConfig.houseName}"
         (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
          ''
+           mkdir -p  houseConfig.houseHomeDir
            run ${houseConfig.runner}/bin/${houseConfig.runner.name} ${houseConfig.hm.homeManagerConfiguration.activationPackage}/activate
          ''))) cfg.houses;
   };

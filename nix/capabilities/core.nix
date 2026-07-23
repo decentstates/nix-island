@@ -5,7 +5,7 @@ in
 {
   options = {
     execWrappers = lib.mkOption {
-      type = dagOfType lib.types.string;
+      type = dagOfType lib.types.str;
       default = [];
       description = ''
         Shell script text, that exec each other.
@@ -37,130 +37,133 @@ in
     };
   };
 
-  execWrappers.dirSetup = libDag.entryBefore ["landlock"] ''
-    set -eu
+  config = {
+    execWrappers.dirSetup = libDag.entryBefore ["landlock" "dirEnvVars"] ''
+      set -eu
 
-    # Ensures no symlink along path, mkdir, permissions
-    ensure_dir() {
-      d=$1
-      case $d in
-        /*) ;;
-        *) echo "housing: refusing $d: not an absolute path" >&2; exit 1 ;;
-      esac
-      cur=
-      IFS=/
-      set -f
-      for comp in $d; do
-        [ -n "$comp" ] || continue
-        cur="$cur/$comp"
-        if [ -L "$cur" ]; then
-          echo "housing: refusing $cur: is a symlink" >&2
+      # Ensures no symlink along path, mkdir, permissions
+      ensure_dir() {
+        d=$1
+        case $d in
+          /*) ;;
+          *) echo "housing: refusing $d: not an absolute path" >&2; exit 1 ;;
+        esac
+        cur=
+        IFS=/
+        set -f
+        for comp in $d; do
+          [ -n "$comp" ] || continue
+          cur="$cur/$comp"
+          if [ -L "$cur" ]; then
+            echo "housing: refusing $cur: is a symlink" >&2
+            exit 1
+          fi
+          if [ ! -e "$cur" ]; then
+            mkdir "$cur"
+          elif [ ! -d "$cur" ]; then
+            echo "housing: refusing $cur: not a directory" >&2
+            exit 1
+          fi
+        done
+        set +f
+        unset IFS
+        if [ "$(${pkgs.coreutils}/bin/stat -c %u "$d")" != "$(${pkgs.coreutils}/bin/id -u)" ]; then
+          echo "housing: refusing $d: not owned by the current user" >&2
           exit 1
         fi
-        if [ ! -e "$cur" ]; then
-          mkdir "$cur"
-        elif [ ! -d "$cur" ]; then
-          echo "housing: refusing $cur: not a directory" >&2
-          exit 1
-        fi
-      done
-      set +f
-      unset IFS
-      if [ "$(${pkgs.coreutils}/bin/stat -c %u "$d")" != "$(${pkgs.coreutils}/bin/id -u)" ]; then
-        echo "housing: refusing $d: not owned by the current user" >&2
-        exit 1
-      fi
-      chmod 700 "$d"
-    }
+        chmod 700 "$d"
+      }
 
-    ensure_dir ${lib.escapeShellArg houseContext.tmpDir}
-    ensure_dir ${lib.escapeShellArg houseContext.runDir}
+      ensure_dir ${lib.escapeShellArg houseContext.houseHomeDir}
+      ensure_dir ${lib.escapeShellArg houseContext.tmpDir}
+      ensure_dir ${lib.escapeShellArg houseContext.runDir}
 
-    exec "$@"
-    '';
-
-  execWrappers.dirEnvVars = libDag.entryAfter ["envFilter"] ''
-    export HOME="${lib.escapeShellArg houseContext.houseHomeDir}"
-    export TMPDIR=${lib.escapeShellArg houseContext.tmpDir}
-    export XDG_RUNTIME_DIR=${lib.escapeShellArg houseContext.runDir}
-
-    exec "$@"
-    '';
-
-  execWrappers.profile = libDag.entryAfter ["dirEnvVars"] ''
-    . /etc/profile
-    [ -f "${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh" ] && \
-      . "${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh"
-    exec "$@"
-    '';
-
-  execWrappers.final = libDag.entryAfter [ "profile" ] ''
-    [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
-    '';
-
-  execWrappers.namespacing = libDag.entryAfter ["landlock"] ''
-    # Rudimentary PID namespacing to hide other processes
-    # TODO: Find out if landlock can show /proc/self successfully...
-    # TODO: LIMITATION: This doesn't hide other /proc files.
-    exec ${pkgs.util-linux}/bin/unshare --user --map-current-user --mount --pid --fork --mount-proc -- ${pkgs.tini}/bin/tini -- "$@"
-  '';
-  
-
-  landlockConfigs = {};
-
-  # TODO: fix island or replace.
-  execWrappers.landlock =
-    let
-      profileName = "the-profile";
-      islandProfile = pkgs.linkFarm "islandProfile" (
-            [{ 
-                name = "profile.toml"; 
-                path = tomlFormat.generate "profile.toml" {
-                  workspace = false;
-                  context = [];
-                };
-            }]
-            ++ pkgs.lib.mapAttrsToList (n: p: { name = "landlock/${n}"; path = p; }) config.landlockConfigs
-          );
-
-      xdgConfigDir = pkgs.linkFarm "xdgConfig" [ 
-          {
-            name = "island/profiles/${profileName}";
-            path = islandProfile;
-          }
-        ];
-    in
-    libDag.entryAnywhere ''
-        # temporarily set XDG_CONFIG_DIR for the island profile we've created.
-        if [ -n "''${XDG_CONFIG_DIR+x}" ]; then 
-          restore=(env "XDG_CONFIG_DIR=$XDG_CONFIG_DIR"); 
-        else 
-          restore=(env -u XDG_CONFIG_DIR); 
-        fi
-        exec env XDG_CONFIG_DIR=${xdgConfigDir} ${island}/bin/island run -p ${lib.escapeShellArg profileName} -- \
-          "''${restore[@]}" "$@"
+      exec "$@"
       '';
 
-  envPassthrough = [
-    "TERM"
-    "COLORTERM"
-    "LC_ALL"
-    "TZ"
-    "USER"
-    "LOGNAME"
-  ];
+    execWrappers.dirEnvVars = libDag.entryAfter ["envFilter"] ''
+      export HOME="${lib.escapeShellArg houseContext.houseHomeDir}"
+      export TMPDIR=${lib.escapeShellArg houseContext.tmpDir}
+      export XDG_RUNTIME_DIR=${lib.escapeShellArg houseContext.runDir}
 
-  execWrappers.envFilter = (
-    assert lib.assertMsg (lib.all (v: builtins.match "^[A-Za-z_][A-Za-z0-9_]*$" v != null) config.envPassthrough)
-      "envPassthrough contains an invalid environment variable name";
-    libDag.entryAfter ["landlock"] ''
-      keep=()
-      for v in ${toString config.envPassthrough}; do
-        if [ -n "''${!v+x}" ]; then 
-          keep+=("$v=''${!v}"); 
-        fi
-      done
-      exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}"  "$@"
-      ''
-  );
+      exec "$@"
+      '';
+
+    execWrappers.profile = libDag.entryAfter ["dirEnvVars"] ''
+      . /etc/profile
+      [ -f "''${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh" ] && \
+        . "''${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh"
+      exec "$@"
+      '';
+
+    execWrappers.final = libDag.entryAfter [ "profile" ] ''
+      [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
+      '';
+
+    execWrappers.namespacing = libDag.entryAfter ["landlock"] ''
+      # Rudimentary PID namespacing to hide other processes
+      # TODO: Find out if landlock can show /proc/self successfully...
+      # TODO: LIMITATION: This doesn't hide other /proc files.
+      exec ${pkgs.util-linux}/bin/unshare --user --map-current-user --mount --pid --fork --mount-proc -- ${pkgs.tini}/bin/tini -- "$@"
+    '';
+    
+
+    landlockConfigs = {};
+
+    # TODO: fix island or replace.
+    execWrappers.landlock =
+      let
+        profileName = "the-profile";
+        islandProfile = pkgs.linkFarm "islandProfile" (
+              [{ 
+                  name = "profile.toml"; 
+                  path = tomlFormat.generate "profile.toml" {
+                    workspace = false;
+                    context = [];
+                  };
+              }]
+              ++ pkgs.lib.mapAttrsToList (n: p: { name = "landlock/${n}"; path = p; }) config.landlockConfigs
+            );
+
+        xdgConfigDir = pkgs.linkFarm "xdgConfig" [ 
+            {
+              name = "island/profiles/${profileName}";
+              path = islandProfile;
+            }
+          ];
+      in
+      libDag.entryAnywhere ''
+          # temporarily set XDG_CONFIG_DIR for the island profile we've created.
+          if [ -n "''${XDG_CONFIG_DIR+x}" ]; then 
+            restore=(env "XDG_CONFIG_DIR=$XDG_CONFIG_DIR"); 
+          else 
+            restore=(env -u XDG_CONFIG_DIR); 
+          fi
+          exec env XDG_CONFIG_DIR=${xdgConfigDir} ${island}/bin/island run -p ${lib.escapeShellArg profileName} -- \
+            "''${restore[@]}" "$@"
+        '';
+
+    envPassthrough = [
+      "TERM"
+      "COLORTERM"
+      "LC_ALL"
+      "TZ"
+      "USER"
+      "LOGNAME"
+    ];
+
+    execWrappers.envFilter = (
+      assert lib.assertMsg (lib.all (v: builtins.match "^[A-Za-z_][A-Za-z0-9_]*$" v != null) config.envPassthrough)
+        "envPassthrough contains an invalid environment variable name";
+      libDag.entryAfter ["landlock"] ''
+        keep=()
+        for v in ${toString config.envPassthrough}; do
+          if [ -n "''${!v+x}" ]; then 
+            keep+=("$v=''${!v}"); 
+          fi
+        done
+        exec ${pkgs.coreutils}/bin/env -i "''${keep[@]}"  "$@"
+        ''
+    );
+  };
 }

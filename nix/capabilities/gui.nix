@@ -1,6 +1,12 @@
 { lib, config, houseContext, pkgs, ... }:
 
 {
+  imports = [
+    ./gui/dbus.nix
+    ./gui/gpu.nix
+    ./gui/wayland.nix
+  ];
+
   options.gui = {
     enable = lib.mkOption {
       type = lib.types.bool;
@@ -13,12 +19,6 @@
       '';
     };
   };
-
-  imports = [
-    ./gui/dbus.nix
-    ./gui/gpu.nix
-    ./gui/wayland.nix
-  ];
 
   config = lib.mkIf config.gui.enable {
     gui.dbus.enable = true;
