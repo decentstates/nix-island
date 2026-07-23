@@ -43,7 +43,7 @@ let
           inherit (houseConfig) username;
           homeDirectory = houseConfig.houseHomeDir;
           sessionVariables = {
-            HOME = houseConfig.houseHomeDirectory;
+            HOME = houseConfig.houseHomeDir;
             TMPDIR = houseConfig.tmpDir;
             HOUSE_NAME = houseConfig.houseName;
             # Used directly in Fish shell, added into other shells below:
@@ -75,13 +75,9 @@ let
   '';
 
   houseModule = 
-  let
-    outerConfig = config;
-  in
-  { name, config, ... }:
+  { name, ... }@houseArgs:
     let
-      houseConfig = config;
-      config = outerConfig;
+      houseConfig = houseArgs.config;
     in
     {
     options = {
@@ -236,7 +232,7 @@ in
       lib.nameValuePair "house-nested-home-manager-activate-${houseConfig.houseName}"
         (lib.hm.dag.entryAfter [ "writeBoundary" "linkGeneration" "installPackages"] (
          ''
-           mkdir -p  houseConfig.houseHomeDir
+           mkdir -p ${lib.escapeShellArg houseConfig.houseHomeDir}
            run ${houseConfig.runner}/bin/${houseConfig.runner.name} ${houseConfig.hm.homeManagerConfiguration.activationPackage}/activate
          ''))) cfg.houses;
   };

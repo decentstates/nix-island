@@ -36,43 +36,40 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    envPassthrough = [ "DBUS_SESSION_BUS_ADDRESS" ];
     simple.readWritePaths = [ proxySocket ];
 
-    execWrappers.dbusProxy = libDag.entryBefore ["envFilter" "landlock"] ''
+    # TODO: review
+    execWrappers.dbusProxy = libDag.entryBetween ["envFilter" "landlock"] ["dirSetup"] ''
       set -euo pipefail
 
-      ORIGINAL_DBUS_SESSION_BUS_ADDRESS="''${DBUS_SESSION_BUS_ADDRESS:-}"
-      if [ -z "$ORIGINAL_DBUS_SESSION_BUS_ADDRESS" ] && [ -n "''${ORIGINAL_XDG_RUNTIME_DIR:-}" ]; then
-        ORIGINAL_DBUS_SESSION_BUS_ADDRESS="unix:path=$ORIGINAL_XDG_RUNTIME_DIR/bus"
+      if [ -z "''${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -n "''${XDG_RUNTIME_DIR:-}" ]; then
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
       fi
-      unset DBUS_SESSION_BUS_ADDRESS
 
-      if [ -n "$ORIGINAL_DBUS_SESSION_BUS_ADDRESS" ]; then
-        # Emulate pipe(2) with a fifo: the proxy holds the write end and
-        # exits when the read end closes. The read end survives the exec
-        # below, tying the proxy's lifetime to the app's. The proxy writes
-        # one byte once its socket is bound and filtering.
+      if [ -n "''${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
         fifo=$(${pkgs.coreutils}/bin/mktemp -u ${houseContext.tmpDir}/dbus-proxy.XXXXXX)
         ${pkgs.coreutils}/bin/mkfifo -m 600 "$fifo"
         exec {unblock}<>"$fifo" {wr}>"$fifo" {rd}<"$fifo" {unblock}>&-
         ${pkgs.coreutils}/bin/rm "$fifo"
 
         ${pkgs.xdg-dbus-proxy}/bin/xdg-dbus-proxy --fd="$wr" \
-          "$ORIGINAL_DBUS_SESSION_BUS_ADDRESS" ${proxySocket} \
+          "$DBUS_SESSION_BUS_ADDRESS" ${lib.escapeShellArg proxySocket} \
           --filter ${filterArgs} \
           {rd}<&- &
         exec {wr}>&-
 
         # Wait for the ready byte (a NUL, so count bytes instead of read -n1).
-        if [ "$(${pkgs.coreutils}/bin/head -c1 <&"$rd" | ${pkgs.coreutils}/bin/wc -c)" -eq 1 ]; then
-          export DBUS_SESSION_BUS_ADDRESS="unix:path=${proxySocket}"
-        else
+        if ! [ "$(${pkgs.coreutils}/bin/head -c1 <&"$rd" | ${pkgs.coreutils}/bin/wc -c)" -eq 1 ]; then
           echo "housing: dbus proxy failed to start; running without session bus" >&2
           exec {rd}<&-
         fi
       fi
 
+      exec "$@"
+    '';
+
+  execWrappers.dbusProxyEnv = libDag.entryBetween ["final"] ["envFilter"] ''
+      export DBUS_SESSION_BUS_ADDRESS="unix:path="${lib.escapeShellArg proxySocket}
       exec "$@"
     '';
   };

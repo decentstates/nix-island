@@ -82,7 +82,7 @@ in
       '';
 
     execWrappers.dirEnvVars = libDag.entryAfter ["envFilter"] ''
-      export HOME="${lib.escapeShellArg houseContext.houseHomeDir}"
+      export HOME=${lib.escapeShellArg houseContext.houseHomeDir}
       export TMPDIR=${lib.escapeShellArg houseContext.tmpDir}
       export XDG_RUNTIME_DIR=${lib.escapeShellArg houseContext.runDir}
 
@@ -91,16 +91,16 @@ in
 
     execWrappers.profile = libDag.entryAfter ["dirEnvVars"] ''
       . /etc/profile
-      [ -f "''${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh" ] && \
-        . "''${XDG_STATE_HOME:-~/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh"
+      [ -f "''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh" ] && \
+        . "''${XDG_STATE_HOME:-$HOME/.local/state}/nix/profile/etc/profile.d/hm-session-vars.sh"
       exec "$@"
       '';
 
     execWrappers.final = libDag.entryAfter [ "profile" ] ''
-      [ "$#" -gt 0 ] && exec "$@" || exec "$SHELL" -l
+      [ "$#" -gt 0 ] && exec "$@" || exec "''${SHELL:-/bin/sh}" -l
       '';
 
-    execWrappers.namespacing = libDag.entryAfter ["landlock"] ''
+    execWrappers.namespacing = libDag.entryBetween ["final"] ["landlock"] ''
       # Rudimentary PID namespacing to hide other processes
       # TODO: Find out if landlock can show /proc/self successfully...
       # TODO: LIMITATION: This doesn't hide other /proc files.
@@ -122,7 +122,7 @@ in
                     context = [];
                   };
               }]
-              ++ pkgs.lib.mapAttrsToList (n: p: { name = "landlock/${n}"; path = p; }) config.landlockConfigs
+              ++ pkgs.lib.mapAttrsToList (n: p: { name = "landlock/${n}.toml"; path = p; }) config.landlockConfigs
             );
 
         xdgConfigDir = pkgs.linkFarm "xdgConfig" [ 
@@ -133,13 +133,13 @@ in
           ];
       in
       libDag.entryAnywhere ''
-          # temporarily set XDG_CONFIG_DIR for the island profile we've created.
-          if [ -n "''${XDG_CONFIG_DIR+x}" ]; then 
-            restore=(env "XDG_CONFIG_DIR=$XDG_CONFIG_DIR"); 
+          # temporarily set XDG_CONFIG_HOME for the island profile we've created.
+          if [ -n "''${XDG_CONFIG_HOME+x}" ]; then 
+            restore=(env "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"); 
           else 
-            restore=(env -u XDG_CONFIG_DIR); 
+            restore=(env -u XDG_CONFIG_HOME); 
           fi
-          exec env XDG_CONFIG_DIR=${xdgConfigDir} ${island}/bin/island run -p ${lib.escapeShellArg profileName} -- \
+          exec env XDG_CONFIG_HOME=${xdgConfigDir} ${island}/bin/island run -p ${lib.escapeShellArg profileName} -- \
             "''${restore[@]}" "$@"
         '';
 

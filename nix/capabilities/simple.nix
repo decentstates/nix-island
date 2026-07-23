@@ -141,7 +141,7 @@
           });
 
         housingRules = {
-          abi = 6;
+          abi = 7;
           ruleset = [{
             handled_access_fs = [ "abi.all" ];
             handled_access_net = [ "abi.all" ];

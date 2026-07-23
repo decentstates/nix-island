@@ -47,7 +47,7 @@ let
       set -euo pipefail
 
       wrappers=()
-      for w in ${lib.escapeShellArg execWrappersD}/*; do
+      for w in ${lib.escapeShellArg execWrappersD}/bin/*; do
           [[ -f $w && -x $w ]] || continue
           wrappers+=("$w")
       done

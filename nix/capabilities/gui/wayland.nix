@@ -3,6 +3,7 @@
 let
   cfg = config.gui.wayland;
   securityContext = pkgs.callPackage ../../pkgs/wayland-security-context/package.nix { };
+  waylandDisplayPath = "${houseContext.runDir}/wayland-security-context";
 in
 {
   options.gui.wayland = {
@@ -16,20 +17,21 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # TODO: This shouldn't be a passthrough env thing but a second exec wrapper on the other side of the envFilter
-    # WAYLAND_DISPLAY is rewritten by wayland-security-context to the
-    # restricted per-launch socket before the env filter runs.
     envPassthrough = [
-      "WAYLAND_DISPLAY"
       "XCURSOR_THEME"
       "XCURSOR_SIZE"
     ];
 
-    execWrappers.wayland = libDag.entryBefore ["envFilter" "landlock"] ''
+    execWrappers.wayland = libDag.entryBetween ["envFilter" "landlock"] ["dirSetup"] ''
       exec ${securityContext}/bin/wayland-security-context \
             --app-id ${lib.escapeShellArg "house-${houseContext.houseName}"} \
-            --runtime-dir "$XDG_RUNTIME_DIR" \
+            --socket ${lib.escapeShellArg waylandDisplayPath} \
             -- "$@"
+    '';
+
+    execWrappers.waylandEnv = libDag.entryBetween ["final"] ["envFilter"] ''
+      export WAYLAND_DISPLAY=${lib.escapeShellArg waylandDisplayPath}
+      exec "$@"
     '';
   };
 }
