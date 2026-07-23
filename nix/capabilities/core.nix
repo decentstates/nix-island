@@ -38,6 +38,16 @@ in
   };
 
   config = {
+    execWrappers.ensureOuterRuntimeDir = libDag.entryBefore ["envFilter" "landlock"] ''
+    if [ -z "''${XDG_RUNTIME_DIR:-}" ]; then
+      XDG_RUNTIME_DIR="''${TMPDIR:-/tmp}/xdg-runtime-$(id -u)"
+      mkdir -p "$XDG_RUNTIME_DIR"
+      chmod 700 "$XDG_RUNTIME_DIR"
+      export XDG_RUNTIME_DIR
+    fi
+    exec "$@"
+    '';
+  
     execWrappers.dirSetup = libDag.entryBefore ["landlock" "dirEnvVars"] ''
       set -eu
 
@@ -81,7 +91,7 @@ in
       exec "$@"
       '';
 
-    execWrappers.dirEnvVars = libDag.entryAfter ["envFilter"] ''
+    execWrappers.dirEnvVars = libDag.entryBetween ["final"] ["envFilter"] ''
       export HOME=${lib.escapeShellArg houseContext.houseHomeDir}
       export TMPDIR=${lib.escapeShellArg houseContext.tmpDir}
       export XDG_RUNTIME_DIR=${lib.escapeShellArg houseContext.runDir}
@@ -100,7 +110,7 @@ in
       [ "$#" -gt 0 ] && exec "$@" || exec "''${SHELL:-/bin/sh}" -l
       '';
 
-    execWrappers.namespacing = libDag.entryBetween ["final"] ["landlock"] ''
+    execWrappers.namespacing = libDag.entryBefore ["landlock"] ''
       # Rudimentary PID namespacing to hide other processes
       # TODO: Find out if landlock can show /proc/self successfully...
       # TODO: LIMITATION: This doesn't hide other /proc files.
@@ -120,12 +130,15 @@ in
         };
         profileDir = "island/profiles/${profileName}";
         xdgConfigDir = pkgs.runCommand "xdgConfig" { } (''
-          mkdir -p "$out/${profileDir}"
-          cp ${profileToml} "$out/${profileDir}/profile.toml"
-        '' + lib.concatStrings (lib.mapAttrsToList (n: p: ''
           mkdir -p "$out/${profileDir}/landlock"
-          cp ${p} "$out/${profileDir}/landlock/${n}.toml"
-        '') config.landlockConfigs));
+          cp ${profileToml} "$out/${profileDir}/profile.toml"
+        '' 
+        + lib.concatStrings
+            (lib.mapAttrsToList 
+              (n: p: ''
+                cp ${p} \
+                  "$out/${profileDir}/landlock/${n}.toml" '')
+              config.landlockConfigs));
       in
       libDag.entryAnywhere ''
           # temporarily set XDG_CONFIG_HOME for the island profile we've created.

@@ -47,23 +47,14 @@
         "/etc/protocols"
         "/etc/gai.conf"
 
-        # dyn linking
-        "/etc/ld.so.cache"
-        "/etc/ld.so.conf"
-        "/etc/ld.so.conf.d/"
-
         # locale
         "/etc/localtime"
         "/etc/locale.conf"
-        "/etc/locale.alias"
 
         # env
         "/etc/os-release"
         "/etc/machine-id"
-        "/etc/mime.types"
         "/etc/profile"
-        "/etc/profile.d/"
-        "/etc/environment"
         "/etc/environment.d/"
 
         # proc
@@ -106,6 +97,59 @@
 
 
   config = lib.mkIf config.simple.enable {
+    # TODO: Make these show up in the docs nicer
+    simple.readPaths = [
+      # id
+      "/etc/passwd"
+      "/etc/group"
+      "/etc/nsswitch.conf"
+
+      # networking
+      "/etc/hosts"
+      "/etc/resolv.conf"
+      "/etc/host.conf"
+      "/etc/hostname"
+      "/etc/services"
+      "/etc/protocols"
+      "/etc/gai.conf"
+
+      # locale
+      "/etc/localtime"
+      "/etc/locale.conf"
+
+      # env
+      "/etc/os-release"
+      "/etc/machine-id"
+      "/etc/profile"
+      "/etc/environment.d/"
+
+      # proc
+      "/proc/self"
+      "/proc/cpuinfo"
+    ];
+
+    simple.readExecutePaths = [
+      "/bin"
+      "/usr/bin"
+      "/nix/store"
+    ];
+
+    simple.readWritePaths = [
+      "/dev/full"
+      "/dev/null"
+      "/dev/random"
+      "/dev/urandom"
+      "/dev/zero"
+
+      "/dev/tty"
+      "/dev/pts"
+      "/dev/ptmx"
+
+      houseContext.houseHomeDir
+      houseContext.tmpDir
+      houseContext.runDir
+    ];
+
     landlockConfigs.simple =
       let
         tomlFormat = pkgs.formats.toml { };

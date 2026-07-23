@@ -39,7 +39,7 @@ in
     simple.readWritePaths = [ proxySocket ];
 
     # TODO: review
-    execWrappers.dbusProxy = libDag.entryBetween ["envFilter" "landlock"] ["dirSetup"] ''
+    execWrappers.dbusProxy = libDag.entryBetween ["envFilter" "landlock"] ["ensureOuterRuntimeDir" "dirSetup"] ''
       set -euo pipefail
 
       if [ -z "''${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -n "''${XDG_RUNTIME_DIR:-}" ]; then
