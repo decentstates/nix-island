@@ -40,15 +40,32 @@ in
   execWrappers.dirSetup = libDag.entryBefore ["landlock"] ''
     set -eu
 
-    # Create the house's private dirs, refusing to follow a pre-planted
-    # symlink and requiring we own the final directory (mode 700).
+    # Ensures no symlink along path, mkdir, permissions
     ensure_dir() {
       d=$1
-      if [ -L "$d" ]; then
-        echo "housing: refusing $d: is a symlink" >&2
-        exit 1
-      fi
-      mkdir -p "$d"
+      case $d in
+        /*) ;;
+        *) echo "housing: refusing $d: not an absolute path" >&2; exit 1 ;;
+      esac
+      cur=
+      IFS=/
+      set -f
+      for comp in $d; do
+        [ -n "$comp" ] || continue
+        cur="$cur/$comp"
+        if [ -L "$cur" ]; then
+          echo "housing: refusing $cur: is a symlink" >&2
+          exit 1
+        fi
+        if [ ! -e "$cur" ]; then
+          mkdir "$cur"
+        elif [ ! -d "$cur" ]; then
+          echo "housing: refusing $cur: not a directory" >&2
+          exit 1
+        fi
+      done
+      set +f
+      unset IFS
       if [ "$(${pkgs.coreutils}/bin/stat -c %u "$d")" != "$(${pkgs.coreutils}/bin/id -u)" ]; then
         echo "housing: refusing $d: not owned by the current user" >&2
         exit 1

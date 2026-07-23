@@ -95,7 +95,10 @@ let
         type = lib.types.strMatching "[a-zA-Z0-9_-]+";
         default =
           if isHomeManager then config.home.username
-          else throw "housing.houses.${name}.username must be set outside home-manager";
+          else throw ''
+            using housing nixos module, not home-manager module:
+            must set username: `housing.houses.$${name}.username`
+            '';
         defaultText = lib.literalExpression "config.home.username";
         description = "Owner of the house";
       };
@@ -103,7 +106,7 @@ let
         type = lib.types.path;
         default =
           if isHomeManager then config.home.homeDirectory
-          else throw "housing.houses.${name}.realHomeDir must be set outside home-manager";
+          else config.users.users.${houseConfig.username}.home;
         defaultText = lib.literalExpression "config.home.homeDirectory";
         description = "The user's real home.";
       };
@@ -209,7 +212,7 @@ in
     houses = lib.mkOption {
       type = lib.types.attrsOf (lib.types.submodule houseModule);
       default = { };
-      description = "House configuraiton";
+      description = "House configuration";
     };
   };
 
